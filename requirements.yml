@@ -1,6 +1,5 @@
 ---
 roles:
   - name: geerlingguy.docker
-  - name: geerlingguy.ansible
   - name: geerlingguy.security
   - name: oefenweb.apt
