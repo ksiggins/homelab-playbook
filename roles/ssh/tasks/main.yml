@@ -1,3 +1,0 @@
----
-- name: Resolve unknown ssh fingerprint to allow playbook processing to continue
-  include_tasks: ssh-scankeys.yml
