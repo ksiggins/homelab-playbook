@@ -1,5 +1,11 @@
 ---
+collections:
+  - name: ksiggins.k3s
+    source: https://github.com/ksiggins/k3s-ansible.git
+    type: git
+
 roles:
   - name: geerlingguy.docker
   - name: geerlingguy.security
   - name: oefenweb.apt
+

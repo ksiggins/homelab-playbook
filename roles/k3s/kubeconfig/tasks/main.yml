@@ -1,0 +1,31 @@
+- name: Remove kube directory
+  file:
+    path: ~/.kube
+    state: absent
+  when: inventory_hostname in groups['ansible']
+
+- name: Create kube directory
+  file:
+    path: ~/.kube
+    state: directory
+  when: inventory_hostname in groups['ansible']
+
+- name: Fetch the kubeconfig file from master
+  fetch:
+    src: ~/.kube/config
+    dest: /tmp/.kube/config
+    flat: true
+    run_once: true
+  when: inventory_hostname in groups['master']
+
+- name: Copy the kubeconfig file to the ansible hosts
+  copy:
+    src: /tmp/.kube/config
+    dest: ~/.kube/config
+  when: inventory_hostname in groups['ansible']
+
+- name: Clean tmp kube directory
+  file:
+    path: /tmp/.kube
+    state: absent
+  run_once: true
