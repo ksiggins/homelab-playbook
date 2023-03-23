@@ -1,1 +1,3 @@
+kubectl_version: 1.23
+
 apt_install: [ ansible ]

@@ -2,3 +2,8 @@
   become: true
   roles:
     - oefenweb.apt
+  tasks:
+    - snap:
+        name: kubectl
+        channel: "{{ kubectl_version }}/stable"
+        classic: true
