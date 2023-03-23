@@ -2,7 +2,3 @@
   become: true
   roles:
     - oefenweb.apt
-
-- hosts: all
-  roles:
-    - k3s/kubeconfig

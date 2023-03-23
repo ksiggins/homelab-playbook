@@ -32,4 +32,7 @@
     - ksiggins.k3s
   roles:
     - k3s/post
-~
+
+- hosts: all
+  roles:
+    - k3s/kubeconfig
