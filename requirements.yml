@@ -7,5 +7,6 @@ collections:
 roles:
   - name: geerlingguy.docker
   - name: geerlingguy.security
+  - name: geerlingguy.helm
   - name: oefenweb.apt
 

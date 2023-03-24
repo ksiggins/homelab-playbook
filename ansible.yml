@@ -2,11 +2,12 @@
   become: true
   roles:
     - oefenweb.apt
+    - geerlingguy.helm
   tasks:
     - snap:
-        "{{ item }}"
-      with_items:
-        - { name: kubectl, state: absent }
-        - { name: helm, state: absent }
-        - { name: kubectl, channel: "{{ kubectl_version }}/stable", classic: true }
-        - { name: helm, classic: true }
+        name: kubectl
+        state: absent
+    - snap:
+        name: kubectl
+        channel: "{{ kubectl_version }}/stable"
+        classic: true
