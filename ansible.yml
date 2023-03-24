@@ -4,9 +4,9 @@
     - oefenweb.apt
   tasks:
     - snap:
-        name: kubectl
-        channel: "{{ kubectl_version }}/stable"
-        classic: true
-    - snap:
-        name: helm
-        classic: true
+        "{{ item }}"
+      with_items:
+        - { name: kubectl, state: absent }
+        - { name: helm, state: absent }
+        - { name: kubectl, channel: "{{ kubectl_version }}/stable", classic: true }
+        - { name: helm, classic: true }
