@@ -2,12 +2,5 @@
   become: true
   roles:
     - oefenweb.apt
+    - andrewrothstein.kubectl
     - geerlingguy.helm
-  tasks:
-    - snap:
-        name: kubectl
-        state: absent
-    - snap:
-        name: kubectl
-        channel: "{{ kubectl_version }}/stable"
-        classic: true

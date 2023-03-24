@@ -9,4 +9,4 @@ roles:
   - name: geerlingguy.security
   - name: geerlingguy.helm
   - name: oefenweb.apt
-
+  - name: andrewrothstein.kubectl

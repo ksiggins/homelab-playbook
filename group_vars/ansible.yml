@@ -1,4 +1,4 @@
-kubectl_version: 1.24
+kubectl_ver: v1.26.2
 helm_version: v3.11.2
 
 apt_install: [ ansible ]
