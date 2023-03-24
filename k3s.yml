@@ -13,11 +13,13 @@
     - download
 
 - hosts: master
-  become: true
   collections:
     - ksiggins.k3s
   roles:
-    - k3s/master
+    - role: k3s/master
+      # gather facts for the root vs logged-in user by specifying become
+      # at the role level instead of play to ensure proper kube config
+      become: true
 
 - hosts: node
   become: true
