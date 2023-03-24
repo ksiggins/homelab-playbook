@@ -7,3 +7,6 @@
         name: kubectl
         channel: "{{ kubectl_version }}/stable"
         classic: true
+    - snap:
+        name: helm
+        classic: true
