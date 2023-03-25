@@ -8,5 +8,9 @@
 - hosts: all
   become: true
   roles:
-    - oefenweb.apt
+    - role: grog.package
+      package_list: [
+        name: qemu-guest-agent,
+        name: xterm
+      ]
     - geerlingguy.security

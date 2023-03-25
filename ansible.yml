@@ -1,5 +1,8 @@
 - hosts: ansible
   become: true
   roles:
-    - oefenweb.apt
+    - role: grog.package
+      package_list: [
+        name: ansible
+      ]
     - andrewrothstein.kubectl
