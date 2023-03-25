@@ -1,0 +1,66 @@
+- name: Add Rancher repo
+  kubernetes.core.helm_repository:
+    name: rancher-stable
+    repo_url: https://releases.rancher.com/server-charts/stable
+  run_once: true
+
+- name: Create a rancher namespace
+  kubernetes.core.k8s:
+    name: cattle-system
+    api_version: v1
+    kind: Namespace
+    state: present
+  run_once: true
+
+- name: Create manifests directory for temp configuration
+  file:
+    path: /tmp/helm
+    state: directory
+    owner: "{{ ansible_user_id }}"
+    mode: 0755
+  run_once: true
+
+- name: Download cert-manager manifest to the cluster
+  ansible.builtin.get_url:
+    url: https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.crds.yaml
+    dest: /tmp/helm/cert-manager.yml
+    owner: "{{ ansible_user_id }}"
+    mode: '0664'
+  run_once: true
+
+- name: Apply cert-manager manifest to the cluster
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/helm/cert-manager.yml
+  run_once: true
+
+- name: Add Jetstack repo
+  kubernetes.core.helm_repository:
+    name: stable
+    repo_url: https://charts.jetstack.io
+  run_once: true
+
+- name: Update the repository cache
+  kubernetes.core.helm:
+    name: dummy
+    namespace: kube-system
+    state: absent
+    update_repo_cache: true
+  run_once: true
+
+- name: Deploy latest version of cert-manager chart inside cert-manager namespace (and create it)
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: stable/cert-manager
+    release_namespace: cert-manager
+    create_namespace: true
+  run_once: true
+
+# - name: Deploy latest version of Rancher chart inside cattle-system namespace
+#   kubernetes.core.helm:
+#     name: rancher
+#     chart_ref: rancher-stable/rancher
+#     release_namespace: cattle-system
+#     values:
+#       bootstrapPassword: admin
+#   run_once: true

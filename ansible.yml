@@ -3,4 +3,3 @@
   roles:
     - oefenweb.apt
     - andrewrothstein.kubectl
-    - geerlingguy.helm
