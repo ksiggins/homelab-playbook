@@ -1,8 +1,18 @@
+- hosts: all
+  connection: local
+  gather_facts: false
+  roles:
+    - ssh/scankeys
+
 - hosts: ansible
   become: true
+  vars:
+    ansible_install_method: pip
   roles:
     - role: grog.package
       package_list: [
-        name: ansible
+        name: python3,
+        name: python3-pip
       ]
+    - geerlingguy.ansible
     - andrewrothstein.kubectl

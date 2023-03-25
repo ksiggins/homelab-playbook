@@ -8,5 +8,6 @@ roles:
   - name: geerlingguy.docker
   - name: geerlingguy.security
   - name: geerlingguy.helm
+  - name: geerlingguy.ansible
   - name: grog.package
   - name: andrewrothstein.kubectl
