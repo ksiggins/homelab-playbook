@@ -13,6 +13,7 @@
       package_list: [
         name: python3,
         name: python3-pip,
+        name: python3-netaddr,
         name: vim,
         name: git
       ]
