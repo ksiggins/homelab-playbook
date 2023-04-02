@@ -1,5 +1,5 @@
 ---
-k3s_version: v1.23.16+k3s1
+k3s_version: v1.24.12+k3s1
 systemd_dir: /etc/systemd/system
 
 # Set your timezone
