@@ -56,11 +56,19 @@
     create_namespace: true
   run_once: true
 
-# - name: Deploy latest version of Rancher chart inside cattle-system namespace
-#   kubernetes.core.helm:
-#     name: rancher
-#     chart_ref: rancher-stable/rancher
-#     release_namespace: cattle-system
-#     values:
-#       bootstrapPassword: admin
-#   run_once: true
+- name: Deploy latest version of Rancher chart inside cattle-system namespace
+  kubernetes.core.helm:
+    name: rancher
+    chart_ref: rancher-stable/rancher
+    release_namespace: cattle-system
+    values:
+      version: "{{ rancher_version }}"
+      hostname: "{{ rancher_hostname }}"
+      bootstrapPassword: "{{ rancher_password }}"
+  run_once: true
+
+- name: Expose rancher directly to the external load balancer
+  command: >-
+    kubectl expose deployment rancher -n cattle-system --type=LoadBalancer --name=rancher-lb --port=443
+  changed_when: false
+  run_once: true
