@@ -38,7 +38,11 @@ extra_server_args: >-
 extra_agent_args: >-
   {{ extra_args }}
 
+# Only enable if your nodes are proxmox LXC nodes, make sure to configure your proxmox nodes
+# in your hosts.ini file.
+proxmox_lxc_configure: false
+
 # choose which external load balancer to install
 # - metallb
 # - vip_cloud_controller
-use_lb: "vip_cloud_controller"
+use_lb: "metallb"
