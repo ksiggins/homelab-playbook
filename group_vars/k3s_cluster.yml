@@ -1,7 +1,5 @@
 ---
 k3s_version: v1.23.16+k3s1
-# this is the user that has ssh access to these machines
-ansible_user: ubuntu
 systemd_dir: /etc/systemd/system
 
 # Set your timezone
@@ -40,7 +38,7 @@ extra_server_args: >-
 extra_agent_args: >-
   {{ extra_args }}
 
-# choose which load balancer to install
+# choose which external load balancer to install
 # - metallb
 # - vip_cloud_controller
 use_lb: "vip_cloud_controller"
