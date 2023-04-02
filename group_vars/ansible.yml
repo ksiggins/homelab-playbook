@@ -2,6 +2,6 @@ kubectl_ver: v1.26.2
 helm_version: v3.11.2
 cert_manager_version: v1.11.0
 
-rancher_version: 2.6.11
+rancher_version: v2.7.1
 rancher_hostname: rancher.local.supermorphic.com
 rancher_password: password

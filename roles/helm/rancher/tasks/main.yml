@@ -52,17 +52,18 @@
   kubernetes.core.helm:
     name: cert-manager
     chart_ref: stable/cert-manager
+    chart_version: "{{ cert_manager_version }}"
     release_namespace: cert-manager
     create_namespace: true
   run_once: true
 
-- name: Deploy latest version of Rancher chart inside cattle-system namespace
+- name: Deploy latest version of rancher chart inside cattle-system namespace
   kubernetes.core.helm:
     name: rancher
     chart_ref: rancher-stable/rancher
+    chart_version: "{{ rancher_version }}"
     release_namespace: cattle-system
     values:
-      version: "{{ rancher_version }}"
       hostname: "{{ rancher_hostname }}"
       bootstrapPassword: "{{ rancher_password }}"
   run_once: true
