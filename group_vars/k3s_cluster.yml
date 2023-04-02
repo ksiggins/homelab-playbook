@@ -40,30 +40,7 @@ extra_server_args: >-
 extra_agent_args: >-
   {{ extra_args }}
 
-# image tag for kube-vip
-kube_vip_tag_version: "v0.5.11"
-kube_vip_cloud_controller_tag_version: "v0.0.4"
-
-# ip range for load balancer
-lb_ip_range: "192.168.100.80-192.168.100.90"
-
-# Only enable if your nodes are proxmox LXC nodes, make sure to configure your proxmox nodes
-# in your hosts.ini file.
-# Please read https://gist.github.com/triangletodd/02f595cd4c0dc9aac5f7763ca2264185 before using this.
-# Most notably, your containers must be privileged, and must not have nesting set to true.
-# Please note this script disables most of the security of lxc containers, with the trade off being that lxc
-# containers are significantly more resource efficent compared to full VMs.
-# Mixing and matching VMs and lxc containers is not supported, ymmv if you want to do this.
-# I would only really recommend using this if you have partiularly low powered proxmox nodes where the overhead of
-# VMs would use a significant portion of your available resources.
-proxmox_lxc_configure: false
-# the user that you would use to ssh into the host, for example if you run ssh some-user@my-proxmox-host,
-# set this value to some-user
-proxmox_lxc_ssh_user: root
-# the unique proxmox ids for all of the containers in the cluster, both worker and master nodes
-proxmox_lxc_ct_ids:
-  - 200
-  - 201
-  - 202
-  - 203
-  - 204
+# choose which load balancer to install
+# - metallb
+# - vip_cloud_controller
+use_lb: "vip_cloud_controller"
