@@ -1,4 +1,4 @@
-- name: Add Rancher repo
+- name: Add rancher repo
   kubernetes.core.helm_repository:
     name: rancher-stable
     repo_url: https://releases.rancher.com/server-charts/stable
@@ -48,7 +48,7 @@
     update_repo_cache: true
   run_once: true
 
-- name: Deploy latest version of cert-manager chart inside cert-manager namespace (and create it)
+- name: Deploy specified version of cert-manager chart inside cert-manager namespace (and create it)
   kubernetes.core.helm:
     name: cert-manager
     chart_ref: stable/cert-manager
@@ -57,7 +57,7 @@
     create_namespace: true
   run_once: true
 
-- name: Deploy latest version of rancher chart inside cattle-system namespace
+- name: Deploy specified version of rancher chart inside cattle-system namespace
   kubernetes.core.helm:
     name: rancher
     chart_ref: rancher-stable/rancher

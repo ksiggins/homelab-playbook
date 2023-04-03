@@ -6,3 +6,4 @@
     - role: helm/prereq
       become: true
     - helm/rancher
+    - helm/traefik

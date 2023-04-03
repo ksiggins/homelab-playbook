@@ -16,7 +16,8 @@
         name: python3-pip,
         name: python3-netaddr,
         name: vim,
-        name: git
+        name: git,
+        name: apache2-utils
       ]
     - geerlingguy.ansible
     - andrewrothstein.kubectl
