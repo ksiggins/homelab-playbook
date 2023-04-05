@@ -1,0 +1,13 @@
+---
+- hosts: pihole
+  connection: local
+  gather_facts: false
+  roles:
+    - ssh/scankeys
+
+- hosts: pihole
+  become: true
+  roles:
+    - r_pufky.pihole
+    - do1jlr.unbound
+    - pihole
