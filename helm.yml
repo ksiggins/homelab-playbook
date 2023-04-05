@@ -1,5 +1,11 @@
 ---
 - hosts: ansible
+  connection: local
+  gather_facts: false
+  roles:
+    - ssh/scankeys
+
+- hosts: ansible
   roles:
     - role: geerlingguy.helm
       become: true

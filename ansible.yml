@@ -1,5 +1,5 @@
 ---
-- hosts: all
+- hosts: ansible
   connection: local
   gather_facts: false
   roles:

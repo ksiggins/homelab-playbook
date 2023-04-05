@@ -1,5 +1,11 @@
 ---
 - hosts: all
+  connection: local
+  gather_facts: false
+  roles:
+    - ssh/scankeys
+
+- hosts: all
   become: true
   roles:
     - role: grog.package
