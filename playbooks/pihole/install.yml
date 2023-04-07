@@ -1,11 +1,11 @@
 ---
-- hosts: all
+- hosts: pihole
   connection: local
   gather_facts: false
   roles:
-    - ssh/scankeys
+    - ../../roles/ssh/scankeys
 
-- hosts: all
+- hosts: pihole
   become: true
   roles:
     - role: grog.package
@@ -14,3 +14,6 @@
         name: xterm
       ]
     - geerlingguy.security
+    - r_pufky.pihole
+    - do1jlr.unbound
+    - pihole/install

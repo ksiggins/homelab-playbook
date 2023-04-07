@@ -3,11 +3,9 @@
   connection: local
   gather_facts: false
   roles:
-    - ssh/scankeys
+    - ../../../roles/ssh/scankeys
 
 - hosts: pihole
   become: true
   roles:
-    - r_pufky.pihole
-    - do1jlr.unbound
-    - pihole
+    - pihole/upgrade

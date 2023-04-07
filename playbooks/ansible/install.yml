@@ -3,7 +3,7 @@
   connection: local
   gather_facts: false
   roles:
-    - ssh/scankeys
+    - ../../roles/ssh/scankeys
 
 - hosts: ansible
   become: true
@@ -12,6 +12,8 @@
   roles:
     - role: grog.package
       package_list: [
+        name: qemu-guest-agent,
+        name: xterm,
         name: python3,
         name: python3-pip,
         name: python3-netaddr,
@@ -19,5 +21,6 @@
         name: git,
         name: apache2-utils
       ]
+    - geerlingguy.security
     - geerlingguy.ansible
     - andrewrothstein.kubectl
