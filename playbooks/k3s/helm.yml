@@ -3,7 +3,7 @@
   connection: local
   gather_facts: false
   roles:
-    - ../roles/ssh/scankeys
+    - ../../roles/ssh/scankeys
 
 - hosts: ansible
   roles:
