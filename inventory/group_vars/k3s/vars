@@ -1,4 +1,3 @@
----
 k3s_version: v1.24.12+k3s1
 systemd_dir: /etc/systemd/system
 
@@ -10,10 +9,6 @@ flannel_iface: "eth0"
 
 # apiserver_endpoint is virtual ip-address which will be configured on each master
 apiserver_endpoint: "192.168.100.99"
-
-# k3s_token is required  masters can talk together securely
-# this token should be alpha numeric only
-k3s_token: "some-SUPER-DEDEUPER-secret-password"
 
 # The IP on which the node is reachable in the cluster.
 # Here, a sensible default is provided, you can still override
