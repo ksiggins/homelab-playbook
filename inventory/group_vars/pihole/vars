@@ -1,6 +1,3 @@
-# set sha256 hashed password
-pihole_webpassword: 21b3e40f62399137a3643dd40fb48a2d3f9af90a40d426aedb9593a1ea97b3ae
-
 # use unbound as a secure open-source recursive DNS server
 pihole_pihole_dns_1: 127.0.0.1#5335
 

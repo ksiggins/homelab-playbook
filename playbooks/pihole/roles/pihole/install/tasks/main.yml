@@ -1,5 +1,0 @@
-- name: Replace pihole password with hash256 version
-  lineinfile:
-    path: /etc/pihole/setupVars.conf
-    regexp: '^WEBPASSWORD='
-    line: WEBPASSWORD={{ pihole_webpassword }}
