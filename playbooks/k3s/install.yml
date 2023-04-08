@@ -7,6 +7,8 @@
 
 - hosts: k3s
   become: true
+  collections:
+    - ksiggins.k3s
   roles:
     - role: grog.package
       package_list: [
@@ -15,12 +17,6 @@
       ]
     - geerlingguy.security
     - geerlingguy.docker
-
-- hosts: k3s
-  become: true
-  collections:
-    - ksiggins.k3s
-  roles:
     - prereq
     - download
 
@@ -38,6 +34,10 @@
   collections:
     - ksiggins.k3s
   roles:
+    - role: grog.package
+      package_list: [
+        name: nfs-kernel-server
+      ]
     - k3s/node
 
 - hosts: master
