@@ -28,7 +28,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(` {{ traefik_hostname}} `)
+    - match: Host(`{{ traefik_hostname }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
       kind: Rule
       middlewares:
         - name: traefik-dashboard-basicauth
