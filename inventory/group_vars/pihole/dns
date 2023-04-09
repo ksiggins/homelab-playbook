@@ -6,3 +6,4 @@ pihole_dns_records:
   - { fqdn: rancher.home.arpa, ip: 192.168.100.81 }
   - { fqdn: traefik.home.arpa, ip: 192.168.100.82 }
   - { fqdn: truenas.home.arpa, ip: 192.168.100.10 }
+  - { fqdn: plex.home.arpa, ip: 192.168.100.84 }
