@@ -1,0 +1,4 @@
+- hosts: pihole
+  become: true
+  roles:
+    - pihole/dns

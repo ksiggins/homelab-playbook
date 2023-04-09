@@ -1,0 +1,8 @@
+pihole_dns_list_file: /etc/pihole/custom.list
+
+pihole_dns_records:
+  - { fqdn: pihole.home.arpa, ip: 192.168.100.15 }
+  - { fqdn: pihole2.home.arpa, ip: 192.168.100.16 }
+  - { fqdn: rancher.home.arpa, ip: 192.168.100.81 }
+  - { fqdn: traefik.home.arpa, ip: 192.168.100.82 }
+  - { fqdn: truenas.home.arpa, ip: 192.168.100.10 }
