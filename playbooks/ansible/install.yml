@@ -2,8 +2,11 @@
 - hosts: ansible
   connection: local
   gather_facts: false
-  roles:
-    - ../../roles/ssh/scankeys
+  tasks:
+  - name: Gather ssh public keys from servers
+    known_hosts:
+      name: "{{ inventory_hostname }}"
+      key: "{{ lookup('pipe', 'ssh-keyscan {{ inventory_hostname }}') }}"
 
 - hosts: ansible
   become: true
