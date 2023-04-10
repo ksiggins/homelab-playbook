@@ -17,3 +17,7 @@
     - geerlingguy.security
     - geerlingguy.ansible
     - andrewrothstein.kubectl
+
+- hosts: ansible
+  roles:
+    - kubectl/autocomplete
