@@ -9,6 +9,14 @@
     - geerlingguy.security
     - geerlingguy.docker
 
+- hosts: k3s_agent
+  become: true
+  roles:
+    - role: grog.package
+      package_list: [
+        name: nfs-kernel-server
+      ]
+
 - hosts: k3s_cluster
   roles:
     - xanmanning.k3s
@@ -16,3 +24,4 @@
 - hosts: all
   roles:
     - k3s/kubeconfig
+
