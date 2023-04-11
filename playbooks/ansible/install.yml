@@ -12,7 +12,8 @@
         name: python3-netaddr,
         name: vim,
         name: git,
-        name: apache2-utils
+        name: apache2-utils,
+        name: iputils-ping
       ]
     - geerlingguy.security
     - geerlingguy.ansible
