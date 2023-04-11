@@ -10,13 +10,14 @@
     state: directory
   when: inventory_hostname in groups['ansible']
 
-- name: Fetch the kubeconfig file from master
+- name: Fetch the kubeconfig file from the k3s cluster
+  become: true
   fetch:
-    src: ~/.kube/config
+    src: /etc/rancher/k3s/k3s.yaml
     dest: /tmp/.kube/config
     flat: true
     run_once: true
-  when: inventory_hostname in groups['master']
+  when: inventory_hostname in groups['k3s_cluster']
 
 - name: Copy the kubeconfig file to the ansible hosts
   copy:

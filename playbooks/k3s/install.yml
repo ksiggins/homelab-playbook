@@ -1,7 +1,5 @@
-- hosts: k3s
+- hosts: k3s_cluster
   become: true
-  collections:
-    - ksiggins.k3s
   roles:
     - role: grog.package
       package_list: [
@@ -10,36 +8,10 @@
       ]
     - geerlingguy.security
     - geerlingguy.docker
-    - prereq
-    - download
 
-- hosts: master
-  collections:
-    - ksiggins.k3s
+- hosts: k3s_cluster
   roles:
-    - role: k3s/master
-      # gather facts for the root vs logged-in user by specifying become
-      # at the role level instead of play to ensure proper kube config
-      become: true
-
-- hosts: node
-  become: true
-  collections:
-    - ksiggins.k3s
-  roles:
-    - role: grog.package
-      package_list: [
-        name: nfs-kernel-server
-      ]
-    - k3s/node
-
-- hosts: master
-  become: true
-  collections:
-    - ksiggins.k3s
-  roles:
-    - k3s/post
-    - k3s/nginx
+    - xanmanning.k3s
 
 - hosts: all
   roles:

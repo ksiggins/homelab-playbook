@@ -7,17 +7,20 @@
 192.168.100.15
 192.168.100.16
 
-[master]
+[k3s_server]
 192.168.100.20
 192.168.100.21
 192.168.100.22
 
-[node]
+[k3s_agent]
 192.168.100.30
 192.168.100.31
 192.168.100.32
 192.168.100.33
 
-[k3s:children]
-master
-node
+[k3s_cluster:children]
+k3s_server
+k3s_agent
+
+[k3s_server:vars]
+k3s_control_node=true
