@@ -39,7 +39,6 @@
     - ksiggins.k3s
   roles:
     - k3s/post
-    - k3s/nginx
 
 - hosts: all
   roles:
