@@ -1,0 +1,19 @@
+- name: Copy the kubeconfig file to tmp
+  become: true
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: /tmp/kubeconfig
+    owner: "{{ ansible_user_id }}"
+    remote_src: true
+  when: inventory_hostname in groups['k3s_server']
+
+- name: Configure kubectl cluster for server endpoint
+  command: >-
+    kubectl config set-cluster default
+      --server={{ endpoint_url }}
+      --kubeconfig /tmp/kubeconfig
+  changed_when: true
+  vars:
+    endpoint_url: >-
+      https://{{ k3s_registration_address | default(ansible_host) }}:6443
+  when: inventory_hostname in groups['k3s_server']

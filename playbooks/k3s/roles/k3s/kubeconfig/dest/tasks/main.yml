@@ -11,22 +11,21 @@
   when: inventory_hostname in groups['ansible']
 
 - name: Fetch the kubeconfig file from the k3s cluster
-  become: true
   fetch:
-    src: /etc/rancher/k3s/k3s.yaml
-    dest: /tmp/.kube/config
+    src: /tmp/kubeconfig
+    dest: /tmp/kubeconfig
     flat: true
+    validate_checksum: false
     run_once: true
   when: inventory_hostname in groups['k3s_server']
 
-- name: Copy the kubeconfig file to the ansible hosts
+- name: Copy the kubeconfig file to ansible host
   copy:
-    src: /tmp/.kube/config
+    src: /tmp/kubeconfig
     dest: ~/.kube/config
   when: inventory_hostname in groups['ansible']
 
-- name: Clean tmp kube directory
+- name: Clean tmp kubeconfig
   file:
-    path: /tmp/.kube
+    path: /tmp/kubeconfig
     state: absent
-  run_once: true

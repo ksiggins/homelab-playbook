@@ -23,5 +23,5 @@
 
 - hosts: all
   roles:
-    - k3s/kubeconfig
-
+    - k3s/kubeconfig/src
+    - k3s/kubeconfig/dest
