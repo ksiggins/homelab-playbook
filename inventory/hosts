@@ -7,6 +7,11 @@
 192.168.100.15
 192.168.100.16
 
+# supported actions
+# add a node - add the new ip to the server/agent list and run k3s/update.yml playbook
+# subtract a node - add the k3s_state=uninstalled to the ip in the server/agent list
+#   you wish to remove and run k3s/update.yml playbook
+#   192.168.100.30 k3s_state=uninstalled
 [k3s_server]
 192.168.100.20
 192.168.100.21

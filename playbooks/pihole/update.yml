@@ -1,4 +1,4 @@
 - hosts: pihole
   become: true
   roles:
-    - pihole/upgrade
+    - update

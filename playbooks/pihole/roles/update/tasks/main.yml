@@ -1,4 +1,4 @@
-- name: Upgrade pihole
+- name: Update pihole
   command: >-
     pihole updatePihole
   changed_when: false
