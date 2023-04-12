@@ -1,0 +1,2 @@
+rancher_hostname: rancher.home.arpa
+traefik_hostname: traefik.home.arpa

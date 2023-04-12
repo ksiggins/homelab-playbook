@@ -1,0 +1,10 @@
+- hosts: ansible
+  become: true
+  roles:
+    - role: geerlingguy.helm
+    - role: prereq
+
+- hosts: ansible
+  roles:
+    - rancher
+    - traefik

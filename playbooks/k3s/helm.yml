@@ -1,8 +1,0 @@
-- hosts: ansible
-  roles:
-    - role: geerlingguy.helm
-      become: true
-    - role: helm/prereq
-      become: true
-    - helm/rancher
-    - helm/traefik

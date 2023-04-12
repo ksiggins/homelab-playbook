@@ -1,5 +1,3 @@
-kube_vip_version: v0.5.11
-
 # install kube-vip as a lb for control plane nodes
 k3s_server_manifests_urls:
   - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"
