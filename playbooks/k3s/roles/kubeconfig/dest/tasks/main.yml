@@ -8,6 +8,7 @@
   file:
     path: ~/.kube
     state: directory
+    mode: 0700
   when: inventory_hostname in groups['ansible']
 
 - name: Fetch the kubeconfig file from the k3s cluster
@@ -23,6 +24,7 @@
   copy:
     src: /tmp/kubeconfig
     dest: ~/.kube/config
+    mode: 0600
   when: inventory_hostname in groups['ansible']
 
 - name: Clean tmp kubeconfig
