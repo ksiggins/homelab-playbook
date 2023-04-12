@@ -1,9 +1,3 @@
----
-collections:
-  - name: ksiggins.k3s
-    source: https://github.com/ksiggins/k3s-ansible.git
-    type: git
-
 roles:
   - { name: geerlingguy.docker, version: 6.1.0 }
   - { name: geerlingguy.security, version: 2.2.0 }

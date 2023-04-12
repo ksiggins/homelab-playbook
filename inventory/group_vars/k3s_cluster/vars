@@ -1,5 +1,4 @@
 k3s_release_version: v1.24.12+k3s1
-kube_vip_version: v0.5.11
 
 # escalate user privileges for tasks that need root permissions
 k3s_become: true
@@ -7,22 +6,10 @@ k3s_become: true
 # Enable etcd embedded datastore for control plane HA
 k3s_etcd_datastore: true
 
-# install kube-vip as a lb for control plane nodes
-k3s_server_manifests_urls:
-  - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"
-    filename: kube-vip-rbac.yml
-
-k3s_server_manifests_templates:
-  - roles/k3s/kube-vip/templates/kube-vip-daemonset.yml.j2
-
-# specify kube-vip virtual IP with which to access the control plane
-k3s_registration_address: 192.168.100.99
-
 # control plane configuration with HA control plane
 k3s_server:
-#  advertise-address: "{{ ansible_host }}"
-#  bind-address: 0.0.0.0
-  tls-san: "{{ k3s_registration_address }}"
+  node-ip: "{{ ansible_host }}"
+  tls-san: "{{ k3s_registration_address | default(omit) }}"
   node-taint:
     - 'CriticalAddonsOnly=true:NoExecute'
   disable:
@@ -30,6 +17,5 @@ k3s_server:
     - traefik
 
 # worker node configuration with HA control plane
-#k3s_agent:
-#  node-ip: "{{ ansible_host }}"
-#  node-external-ip: "{{ ansible_host }}"
+k3s_agent:
+  node-ip: "{{ ansible_host }}"
