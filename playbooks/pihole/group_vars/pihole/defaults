@@ -8,3 +8,6 @@ pihole_dnsmasq_listening: single
 unbound_listen_addresses:
   - '127.0.0.1@5335'
   - '::1@5335'
+
+# use location where displayed in front-end ui
+pihole_dns_list_file: /etc/pihole/custom.list

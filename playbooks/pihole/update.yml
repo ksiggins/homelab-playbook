@@ -1,4 +1,6 @@
 - hosts: pihole
   become: true
-  roles:
-    - pihole
+
+  tasks:
+    - import_tasks: tasks/restart-dns.yml
+    - import_tasks: tasks/update-pihole.yml

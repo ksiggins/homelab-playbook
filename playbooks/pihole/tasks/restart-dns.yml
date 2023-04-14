@@ -10,6 +10,5 @@
     create: yes
   with_items: "{{ pihole_dns_records }}"
 
-- name: Update pihole
-  command: >-
-    pihole updatePihole
+- name: Restart pihole dns resolver
+  command: pihole restartdns

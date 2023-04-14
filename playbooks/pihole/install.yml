@@ -1,5 +1,6 @@
 - hosts: pihole
   become: true
+
   roles:
     - role: grog.package
       package_list: [
@@ -9,4 +10,6 @@
     - geerlingguy.security
     - r_pufky.pihole
     - do1jlr.unbound
-    - pihole
+
+  tasks:
+    - import_tasks: tasks/restart-dns.yml

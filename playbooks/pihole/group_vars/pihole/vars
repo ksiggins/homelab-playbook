@@ -1,5 +1,3 @@
-pihole_dns_list_file: /etc/pihole/custom.list
-
 pihole_dns_records:
   - { fqdn: pihole.home.arpa, ip: 192.168.100.15 }
   - { fqdn: pihole2.home.arpa, ip: 192.168.100.16 }
