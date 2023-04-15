@@ -3,10 +3,6 @@
 
   roles:
     - role: grog.package
-      package_list: [
-        name: qemu-guest-agent,
-        name: xterm
-      ]
     - geerlingguy.security
     - r_pufky.pihole
     - do1jlr.unbound
