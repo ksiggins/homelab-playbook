@@ -1,0 +1,11 @@
+- hosts: plex
+  become: true
+  roles:
+    - role: grog.package
+      package_list: [
+        name: qemu-guest-agent,
+        name: xterm,
+        name: nfs-kernel-server
+      ]
+    - geerlingguy.security
+    - geerlingguy.docker
