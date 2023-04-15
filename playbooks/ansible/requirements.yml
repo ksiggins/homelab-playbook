@@ -1,0 +1,9 @@
+roles:
+  - name: geerlingguy.security
+    version: 2.2.0
+  - name: geerlingguy.ansible
+    version: 2.2.0
+  - name: grog.package
+    version: v1.3.1
+  - name: andrewrothstein.kubectl
+    version: v1.2.7

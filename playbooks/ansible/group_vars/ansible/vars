@@ -1,0 +1,13 @@
+package_list:
+  - name: qemu-guest-agent
+  - name: xterm
+  - name: python3
+  - name: python3-pip
+  - name: python3-netaddr
+  - name: vim
+  - name: git
+  - name: apache2-utils
+  - name: iputils-ping
+
+rancher_hostname: rancher.home.arpa
+traefik_hostname: traefik.home.arpa

@@ -1,9 +1,10 @@
 # homelab-playbook
 
 ## Requirements
-Install the ansible galaxy collections and roles that the playbooks use beforehand
+Install the ansible galaxy collections and roles that the playbooks use beforehand (remove .ansible to reinstall with updated versions or clear out unused versions)
 ```
-ansible-galaxy install --force -r requirements.yml
+rm -rf .ansible
+ansible-galaxy install -r requirements.yml
 ```
 
 ## Ansible Vault
