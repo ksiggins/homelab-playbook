@@ -1,7 +1,9 @@
 - hosts: ansible
   become: true
+
   vars:
     ansible_install_method: pip
+
   roles:
     - role: grog.package
       package_list: [
@@ -19,6 +21,6 @@
     - geerlingguy.ansible
     - andrewrothstein.kubectl
 
-- hosts: ansible
-  roles:
-    - kubectl/autocomplete
+  tasks:
+    - import_tasks: tasks/kubectl-completion.yml
+      become: false
