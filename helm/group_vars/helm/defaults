@@ -1,0 +1,5 @@
+# timeout to wait for metallb services to come up
+metallb_available_timeout: 120s
+
+# configure metallb to operate in either layer 2 (ARP/NDP) or layer 3 (BGP) mode
+metallb_mode: layer2

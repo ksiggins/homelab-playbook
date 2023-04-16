@@ -1,0 +1,9 @@
+- hosts: helm
+  become: true
+  roles:
+    - grog.package
+    - geerlingguy.helm
+
+- hosts: helm
+  tasks:
+    - import_tasks: tasks/metallb.yml

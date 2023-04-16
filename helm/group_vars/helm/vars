@@ -1,0 +1,15 @@
+package_list:
+  - name: python3
+  - name: python3-pip
+  - name: python3-yaml
+  - name: python3-kubernetes
+  - name: python3-jsonpatch
+
+# metallb ip range for load balancer
+metallb_ip_range: 
+  - 192.168.100.80-192.168.100.90
+
+# layer3 (BGP) options
+metallb_bgp_my_asn: 64513
+metallb_bgp_peer_asn: 64512
+metallb_bgp_peer_address: 192.168.100.1
