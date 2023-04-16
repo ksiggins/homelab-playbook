@@ -3,13 +3,6 @@
 192.168.100.12
 192.168.100.13
 
-[pihole]
-192.168.100.15
-192.168.100.16
-
-[plex]
-192.168.100.17
-
 # supported actions
 # add a node - add the new ip to the server/agent list and run k3s/update.yml playbook
 # subtract a node - add the k3s_state=uninstalled to the ip in the server/agent list
