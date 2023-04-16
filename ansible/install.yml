@@ -5,7 +5,7 @@
     ansible_install_method: pip
 
   roles:
-    - role: grog.package
+    - grog.package
     - geerlingguy.security
     - geerlingguy.ansible
     - andrewrothstein.kubectl

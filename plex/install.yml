@@ -1,7 +1,6 @@
 - hosts: plex
   become: true
-
   roles:
-    - role: grog.package
+    - grog.package
     - geerlingguy.security
     - geerlingguy.docker
