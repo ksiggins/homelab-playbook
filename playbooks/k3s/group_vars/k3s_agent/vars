@@ -1,0 +1,2 @@
+package_list:
+  - name: nfs-kernel-server

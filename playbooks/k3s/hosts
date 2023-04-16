@@ -1,0 +1,27 @@
+[ansible]
+192.168.100.11
+192.168.100.12
+192.168.100.13
+
+# supported actions
+# add a node - add the new ip to the server/agent list and run k3s/update.yml playbook
+# subtract a node - add the k3s_state=uninstalled to the ip in the server/agent list
+#   you wish to remove and run k3s/update.yml playbook
+#   192.168.100.30 k3s_state=uninstalled
+[k3s_server]
+192.168.100.20
+192.168.100.21
+192.168.100.22
+
+[k3s_agent]
+#192.168.100.30
+#192.168.100.31
+#192.168.100.32
+#192.168.100.33
+
+[k3s_cluster:children]
+k3s_server
+k3s_agent
+
+[k3s_server:vars]
+k3s_control_node=true

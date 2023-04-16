@@ -1,27 +1,20 @@
 - hosts: k3s_cluster
   become: true
   roles:
-    - role: grog.package
-      package_list: [
-        name: qemu-guest-agent,
-        name: xterm
-      ]
+    - grog.package
     - geerlingguy.security
     - geerlingguy.docker
 
 - hosts: k3s_agent
   become: true
   roles:
-    - role: grog.package
-      package_list: [
-        name: nfs-kernel-server
-      ]
+    - grog.package
 
 - hosts: k3s_cluster
   roles:
     - xanmanning.k3s
 
 - hosts: all
-  roles:
-    - kubeconfig/src
-    - kubeconfig/dest
+  tasks:
+    - import_tasks: tasks/kubeconfig-src.yml
+    - import_tasks: tasks/kubeconfig-dest.yml
