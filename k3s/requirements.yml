@@ -7,3 +7,5 @@ roles:
     version: v1.3.1
   - name: xanmanning.k3s
     version: v3.3.1
+  - name: andrewrothstein.kubectl
+    version: v1.2.7

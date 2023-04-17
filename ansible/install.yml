@@ -1,15 +1,8 @@
 - hosts: ansible
   become: true
-
   vars:
     ansible_install_method: pip
-
   roles:
     - grog.package
     - geerlingguy.security
     - geerlingguy.ansible
-    - andrewrothstein.kubectl
-
-  tasks:
-    - import_tasks: tasks/kubectl-completion.yml
-      become: false

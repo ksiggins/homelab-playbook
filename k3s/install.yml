@@ -14,7 +14,13 @@
   roles:
     - xanmanning.k3s
 
+- hosts: ansible
+  become: true
+  roles:
+    - andrewrothstein.kubectl
+
 - hosts: all
   tasks:
     - import_tasks: tasks/kubeconfig-src.yml
     - import_tasks: tasks/kubeconfig-dest.yml
+    - import_tasks: tasks/kubectl-completion.yml
