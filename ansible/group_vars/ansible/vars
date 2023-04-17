@@ -8,6 +8,3 @@ package_list:
   - name: git
   - name: apache2-utils
   - name: iputils-ping
-
-rancher_hostname: rancher.home.arpa
-traefik_hostname: traefik.home.arpa
