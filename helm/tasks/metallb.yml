@@ -1,9 +1,3 @@
-- name: Create a metallb-system namespace
-  kubernetes.core.k8s:
-    name: metallb-system
-    kind: Namespace
-  run_once: true
-
 - name: Add metallb repo
   kubernetes.core.helm_repository:
     name: metallb
@@ -16,9 +10,10 @@
     chart_ref: metallb/metallb
     chart_version: "{{ metallb_version }}"
     release_namespace: metallb-system
-    values: "{{ lookup('file', 'values-metallb.yaml') | from_yaml }}"
+    create_namespace: true
     update_repo_cache: true
     wait: true
+    values: "{{ lookup('file', 'values-metallb.yaml') | from_yaml }}"
   run_once: true
 
 - name: Apply metallb ipaddresspool

@@ -1,9 +1,3 @@
-- name: Create a traefik-v2 namespace
-  kubernetes.core.k8s:
-    name: traefik-v2
-    kind: Namespace
-  run_once: true
-
 - name: Add traefik repo
   kubernetes.core.helm_repository:
     name: traefik
@@ -16,9 +10,10 @@
     chart_ref: traefik/traefik
     chart_version: "{{ traefik_version }}"
     release_namespace: traefik-v2
-    values: "{{ lookup('file', 'values-traefik.yaml') | from_yaml}}"
+    create_namespace: true
     update_repo_cache: true
     wait: true
+    values: "{{ lookup('file', 'values-traefik.yaml') | from_yaml}}"
   run_once: true
 
 - name: Apply traefik dashboard ingressroute
