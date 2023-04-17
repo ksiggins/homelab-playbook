@@ -1,23 +1,13 @@
+- name: Create a metallb-system namespace
+  kubernetes.core.k8s:
+    name: metallb-system
+    kind: Namespace
+  run_once: true
+
 - name: Add metallb repo
   kubernetes.core.helm_repository:
     name: metallb
     repo_url: https://metallb.github.io/metallb
-  run_once: true
-
-- name: Create a metallb-system namespace
-  kubernetes.core.k8s:
-    name: metallb-system
-    api_version: v1
-    kind: Namespace
-    state: present
-  run_once: true
-
-- name: Update the repository cache
-  kubernetes.core.helm:
-    name: metallb
-    namespace: metallb-system
-    state: absent
-    update_repo_cache: true
   run_once: true
 
 - name: Deploy specified version of metallb chart inside metallb-system namespace
@@ -27,55 +17,8 @@
     chart_version: "{{ metallb_version }}"
     release_namespace: metallb-system
     values: "{{ lookup('template', 'metallb/values.yaml') | from_yaml }}"
-  run_once: true
-
-- name: Test metallb-system namespace
-  command: >-
-    kubectl get ns metallb-system
-  changed_when: false
-  run_once: true
-
-- name: Wait for MetalLB resources
-  command: >-
-    kubectl -n metallb-system wait {{ item.resource }}
-    {% if item.name | default(False) -%}{{ item.name }}{%- endif %}
-    {% if item.selector | default(False) -%}--selector='{{ item.selector }}'{%- endif %}
-    {% if item.condition | default(False) -%}{{ item.condition }}{%- endif %}
-    --timeout='{{ metallb_available_timeout }}'
-  changed_when: false
-  run_once: true
-  with_items:
-    - description: controller
-      resource: deployment
-      name: metallb-controller
-      condition: --for condition=Available=True
-    - description: webhook service
-      resource: pod
-      selector: app.kubernetes.io/component=controller
-      condition: --for=jsonpath='{.status.phase}'=Running
-    - description: pods in replica sets
-      resource: pod
-      selector: app.kubernetes.io/component=controller
-      condition: --for condition=Ready
-    - description: ready replicas of controller
-      resource: replicaset
-      selector: app.kubernetes.io/component=controller
-      condition: --for=jsonpath='{.status.readyReplicas}'=1
-    - description: fully labeled replicas of controller
-      resource: replicaset
-      selector: app.kubernetes.io/component=controller
-      condition: --for=jsonpath='{.status.fullyLabeledReplicas}'=1
-    - description: available replicas of controller
-      resource: replicaset
-      selector: app.kubernetes.io/component=controller
-      condition: --for=jsonpath='{.status.availableReplicas}'=1
-  loop_control:
-    label: "{{ item.description }}"
-
-- name: Test metallb-system webhook-service endpoint
-  command: >-
-    kubectl -n metallb-system get endpoints metallb-webhook-service
-  changed_when: false
+    update_repo_cache: true
+    wait: true
   run_once: true
 
 - name: Apply metallb ipaddresspool
@@ -91,30 +34,9 @@
   run_once: true
   when: metallb_mode == "layer2"
 
-- name: Test metallb-system resources for layer 2 configuration
-  command: >-
-    kubectl -n metallb-system get {{ item }}
-  changed_when: false
-  run_once: true
-  when: metallb_mode == "layer2"
-  with_items:
-    - IPAddressPool
-    - L2Advertisement
-
 - name: Apply metallb layer 3
   kubernetes.core.k8s:
     state: present
     definition: "{{ lookup('template', 'metallb/bgpadvertisement.yaml') | from_yaml }}"
   run_once: true
   when: metallb_mode == "layer3"
-
-- name: Test metallb-system resources for layer 3 configuration
-  command: >-
-    kubectl -n metallb-system get {{ item }}
-  changed_when: false
-  run_once: true
-  when: metallb_mode == "layer3"
-  with_items:
-    - IPAddressPool
-    - BGPPeer
-    - BGPAdvertisement
