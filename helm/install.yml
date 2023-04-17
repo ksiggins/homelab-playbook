@@ -8,3 +8,4 @@
   tasks:
     - import_tasks: tasks/metallb.yml
     - import_tasks: tasks/traefik.yml
+    - import_tasks: tasks/cert-manager.yml
