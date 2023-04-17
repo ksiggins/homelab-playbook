@@ -8,3 +8,6 @@ package_list:
 # metallb ip range for load balancer
 metallb_ip_range: 
   - 192.168.100.80-192.168.100.90
+
+# hostnames for traefik ingress routes
+traefik_hostname: traefik.home.arpa

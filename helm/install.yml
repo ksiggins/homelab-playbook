@@ -7,3 +7,4 @@
 - hosts: helm
   tasks:
     - import_tasks: tasks/metallb.yml
+    - import_tasks: tasks/traefik.yml
