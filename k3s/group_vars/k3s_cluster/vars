@@ -10,4 +10,4 @@ k3s_server_manifests_urls:
   - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"
     filename: kube-vip-rbac.yaml
 k3s_server_manifests_templates:
-  - templates/kube-vip-daemonset.yaml.j2
+  - templates/kube-vip/daemonset.yaml.j2
