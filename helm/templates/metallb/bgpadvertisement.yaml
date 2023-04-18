@@ -5,18 +5,8 @@ metadata:
   namespace: metallb-system
 spec:
   ipAddressPools:
-  - first-pool
+    - first-pool
   aggregationLength: 32
   localPref: 100
   communities:
-  - 65535:65282
----
-apiVersion: metallb.io/v1beta2
-kind: BGPPeer
-metadata:
-  name: default
-  namespace: metallb-system
-spec:
-  myASN: {{ metallb_bgp_my_asn }}
-  peerASN: {{ metallb_bgp_peer_asn }}
-  peerAddress: {{ metallb_bgp_peer_address }}
+    - 65535:65282

@@ -12,3 +12,6 @@ metallb_ip_range:
 
 # hostnames for traefik ingress routes
 traefik_hostname: traefik.home.arpa
+
+# traefik dashboard password (base64 encoded)
+traefik_dashboard_password: YWRtaW46JGFwcjEkOXZsSUhPNHkkOXBQZnZmcXQybmhJNi5qbVREdVpKMAoK

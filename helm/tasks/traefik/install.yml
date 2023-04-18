@@ -16,7 +16,11 @@
     values: "{{ lookup('file', 'values-traefik.yaml') | from_yaml}}"
   run_once: true
 
-- name: Apply traefik dashboard ingressroute
+- name: Apply traefik dashboard resources
   kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'traefik/dashboard.yaml.j2') | from_yaml }}"
+    definition: "{{ lookup('template', 'traefik/dashboard/{{ item|lower }}.yaml') | from_yaml }}"
   run_once: true
+  with_items:
+    - Secret
+    - Middleware
+    - IngressRoute

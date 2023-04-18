@@ -16,19 +16,21 @@
     values: "{{ lookup('file', 'values-metallb.yaml') | from_yaml }}"
   run_once: true
 
-- name: Apply metallb ipaddresspool
+- name: Apply metallb layer 2 resources
   kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'metallb/ipaddresspool.yaml.j2') | from_yaml }}"
-  run_once: true
-
-- name: Apply metallb layer 2
-  kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'metallb/l2advertisement.yaml') | from_yaml }}"
+    definition: "{{ lookup('template', 'metallb/{{ item|lower }}.yaml') | from_yaml }}"
   run_once: true
   when: metallb_mode == "layer2"
+  with_items:
+    - IPAddressPool
+    - L2Advertisement
 
-- name: Apply metallb layer 3
+- name: Apply metallb layer 3 resources
   kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'metallb/bgpadvertisement.yaml') | from_yaml }}"
+    definition: "{{ lookup('template', 'metallb/{{ item|lower }}.yaml') | from_yaml }}"
   run_once: true
   when: metallb_mode == "layer3"
+  with_items:
+    - IPAddressPool
+    - BGPAdvertisement
+    - BGPPeer

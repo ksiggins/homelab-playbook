@@ -1,0 +1,9 @@
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: default
+  namespace: metallb-system
+spec:
+  myASN: {{ metallb_bgp_my_asn }}
+  peerASN: {{ metallb_bgp_peer_asn }}
+  peerAddress: {{ metallb_bgp_peer_address }}
