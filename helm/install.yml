@@ -6,6 +6,6 @@
 
 - hosts: helm
   tasks:
-    - import_tasks: tasks/metallb.yml
-    - import_tasks: tasks/traefik.yml
-    - import_tasks: tasks/cert-manager.yml
+    - import_tasks: tasks/metallb/install.yml
+    - import_tasks: tasks/traefik/install.yml
+    - import_tasks: tasks/cert_manager/install.yml

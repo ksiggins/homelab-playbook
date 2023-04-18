@@ -1,0 +1,20 @@
+- name: Remove metallb chart
+  kubernetes.core.helm:
+    name: metallb
+    release_namespace: metallb-system
+    state: absent
+    wait: true
+  run_once: true
+
+- name: Remove metallb repo
+  kubernetes.core.helm_repository:
+    name: metallb
+    state: absent
+  run_once: true
+
+- name: Remove metallb-system namespace
+  kubernetes.core.k8s:
+    name: metallb-system
+    kind: Namespace
+    state: absent
+  run_once: true

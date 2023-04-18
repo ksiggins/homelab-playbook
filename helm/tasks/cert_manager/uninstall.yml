@@ -1,0 +1,37 @@
+- name: Remove cert-manager chart
+  kubernetes.core.helm:
+    name: cert-manager
+    release_namespace: cert-manager
+    state: absent
+    wait: true
+  run_once: true
+
+- name: Remove jetstack repo
+  kubernetes.core.helm_repository:
+    name: stable
+    state: absent
+  run_once: true
+
+- name: Remove cert-manager namespace
+  kubernetes.core.k8s:
+    name: cert-manager
+    kind: Namespace
+    state: absent
+  run_once: true
+
+- name: Download cert-manager CRDs
+  ansible.builtin.get_url:
+    url: https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.crds.yaml
+    dest: /tmp/cert-manager.crds.yaml
+  run_once: true
+
+- name: Remove cert-manager CRDs
+  kubernetes.core.k8s:
+    state: absent
+    src: /tmp/cert-manager.crds.yaml
+  run_once: true
+
+- name: Remove downloaded tmp CRD file
+  ansible.builtin.file:
+    path: /tmp/traefik.crds.yaml
+    state: absent

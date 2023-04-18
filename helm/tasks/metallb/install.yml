@@ -4,7 +4,7 @@
     repo_url: https://metallb.github.io/metallb
   run_once: true
 
-- name: Deploy specified version of metallb chart inside metallb-system namespace
+- name: Deploy metallb chart inside metallb-system namespace
   kubernetes.core.helm:
     name: metallb
     chart_ref: metallb/metallb
@@ -18,20 +18,17 @@
 
 - name: Apply metallb ipaddresspool
   kubernetes.core.k8s:
-    state: present
     definition: "{{ lookup('template', 'metallb/ipaddresspool.yaml.j2') | from_yaml }}"
   run_once: true
 
 - name: Apply metallb layer 2
   kubernetes.core.k8s:
-    state: present
     definition: "{{ lookup('template', 'metallb/l2advertisement.yaml') | from_yaml }}"
   run_once: true
   when: metallb_mode == "layer2"
 
 - name: Apply metallb layer 3
   kubernetes.core.k8s:
-    state: present
     definition: "{{ lookup('template', 'metallb/bgpadvertisement.yaml') | from_yaml }}"
   run_once: true
   when: metallb_mode == "layer3"
