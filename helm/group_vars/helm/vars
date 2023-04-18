@@ -6,8 +6,9 @@ package_list:
   - name: python3-jsonpatch
 
 # metallb ip range for load balancer
+# assign to traefik which will route to rest of services
 metallb_ip_range: 
-  - 192.168.100.80-192.168.100.90
+  - 192.168.100.80
 
 # hostnames for traefik ingress routes
 traefik_hostname: traefik.home.arpa
