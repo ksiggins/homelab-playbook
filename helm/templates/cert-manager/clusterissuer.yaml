@@ -1,0 +1,31 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-{{ letsencrypt_env }}
+spec:
+  acme:
+    email: {{ email_address }}
+    server: https://acme{% if letsencrypt_env == 'staging' -%}-staging{%- endif %}-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-{{ letsencrypt_env }}
+    solvers:
+    - selector:
+        dnsZones:
+{% for zone in dns_zones %}
+        - {{ zone }}
+{% endfor %}
+{% if dns_challenge_provider == 'cloudflare' %}
+      dns01:
+        cloudflare:
+          email: {{ email_address }}
+          apiTokenSecretRef:
+            name: dns-challenge-provider-api-token-secret
+            key: api-token
+{% elif dns_challenge_provider == 'digitalocean' %}
+      dns01:
+        digitalocean:
+          email: {{ email_address }}
+          tokenSecretRef:
+            name: dns-challenge-provider-api-token-secret
+            key: api-token
+{% endif %}

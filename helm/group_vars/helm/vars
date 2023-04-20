@@ -11,7 +11,8 @@ metallb_ip_range:
   - 192.168.100.80/32
 
 # hostnames for traefik ingress routes
-traefik_hostname: traefik.home.arpa
+traefik_hostname: traefik.local.supermorphic.com
 
-# traefik dashboard password (base64 encoded)
-traefik_dashboard_password: YWRtaW46JGFwcjEkOXZsSUhPNHkkOXBQZnZmcXQybmhJNi5qbVREdVpKMAoK
+# dns zones for cert-manager
+dns_zones:
+  - supermorphic.com

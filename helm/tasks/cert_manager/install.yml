@@ -28,3 +28,11 @@
     wait: true
     values: "{{ lookup('file', 'values-cert-manager.yaml') | from_yaml }}"
   run_once: true
+
+- name: Apply cert-manager resources
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'cert-manager/{{ item|lower }}.yaml') | from_yaml }}"
+  run_once: true
+  with_items:
+    - Secret
+    - ClusterIssuer

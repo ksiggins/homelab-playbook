@@ -109,7 +109,9 @@ serviceAccount:
 
 # Additional command line flags to pass to cert-manager controller binary.
 # To see all available flags run docker run quay.io/jetstack/cert-manager-controller:<version> --help
-extraArgs: []
+extraArgs:
+  - "--dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53"
+  - "--dns01-recursive-nameservers-only"
   # When this flag is enabled, secrets will be automatically removed when the certificate resource is deleted
   # - --enable-certificate-owner-ref=true
   # Use this flag to enable or disable arbitrary controllers, for example, disable the CertificiateRequests approver
@@ -165,11 +167,11 @@ podLabels: {}
 # cert-manager can access an ingress or DNS TXT records at all times.
 # NOTE: This requires Kubernetes 1.10 or `CustomPodDNS` feature gate enabled for
 # the cluster to work.
-# podDnsPolicy: "None"
-# podDnsConfig:
-#   nameservers:
-#     - "1.1.1.1"
-#     - "8.8.8.8"
+podDnsPolicy: "None"
+podDnsConfig:
+  nameservers:
+    - "1.1.1.1"
+    - "8.8.8.8"
 
 nodeSelector:
   kubernetes.io/os: linux
