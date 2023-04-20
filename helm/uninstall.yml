@@ -1,5 +1,6 @@
 - hosts: helm
   tasks:
-    - import_tasks: tasks/cert_manager/uninstall.yml
+    - import_tasks: tasks/kube-prometheus-stack/uninstall.yml
+    - import_tasks: tasks/cert-manager/uninstall.yml
     - import_tasks: tasks/traefik/uninstall.yml
     - import_tasks: tasks/metallb/uninstall.yml

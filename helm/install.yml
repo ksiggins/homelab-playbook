@@ -8,4 +8,5 @@
   tasks:
     - import_tasks: tasks/metallb/install.yml
     - import_tasks: tasks/traefik/install.yml
-    - import_tasks: tasks/cert_manager/install.yml
+    - import_tasks: tasks/cert-manager/install.yml
+    - import_tasks: tasks/kube-prometheus-stack/install.yml

@@ -17,5 +17,6 @@
     values:
       hostname: "{{ rancher_hostname }}"
       bootstrapPassword: "{{ rancher_password }}"
-      letsEncrypt.email: "{{ email_address }}"
+      letsEncrypt:
+        email: "{{ email_address }}"
   run_once: true

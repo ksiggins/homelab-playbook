@@ -1,0 +1,34 @@
+- name: Add prometheus repo
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: https://prometheus-community.github.io/helm-charts
+  run_once: true
+
+- name: Deploy prometheus chart inside monitoring namespace
+  kubernetes.core.helm:
+    name: kube-prometheus
+    chart_ref: prometheus-community/kube-prometheus-stack
+    chart_version: "{{ kube_prometheus_stack_version }}"
+    release_namespace: monitoring
+    create_namespace: true
+    update_repo_cache: true
+    wait: true
+    values: "{{ lookup('file', 'values-kube-prometheus-stack.yaml') | from_yaml}}"
+    values:
+      grafana:
+        adminPassword: "{{ grafana_password }}"
+  run_once: true
+
+- name: Apply prometheus dashboard resources
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'kube-prometheus-stack/prometheus/dashboard/{{ item|lower }}.yaml') | from_yaml }}"
+  run_once: true
+  with_items:
+    - IngressRoute
+
+- name: Apply grafana dashboard resources
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'kube-prometheus-stack/grafana/dashboard/{{ item|lower }}.yaml') | from_yaml }}"
+  run_once: true
+  with_items:
+    - IngressRoute
