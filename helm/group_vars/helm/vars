@@ -10,9 +10,10 @@ package_list:
 metallb_ip_range: 
   - 192.168.100.80/32
 
-# hostnames for traefik ingress routes
-traefik_hostname: traefik.local.supermorphic.com
-
 # dns zones for cert-manager
 dns_zones:
   - supermorphic.com
+
+# hostnames
+traefik_hostname: traefik.local.supermorphic.com
+rancher_hostname: rancher.local.supermorphic.com

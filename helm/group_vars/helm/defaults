@@ -13,8 +13,9 @@ metallb_bgp_my_asn: 64513
 metallb_bgp_peer_asn: 64512
 metallb_bgp_peer_address: 192.168.100.1
 
-# hostnames for traefik ingress routes
+# hostnames
 traefik_hostname: traefik.localhost
+rancher_hostname: rancher.localhost
 
 # lets encrypt staging or prod environment
 # note: prod has a rate limiter

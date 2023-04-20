@@ -1,0 +1,20 @@
+- name: Remove rancher chart
+  kubernetes.core.helm:
+    name: rancher
+    release_namespace: cattle-system
+    state: absent
+    wait: true
+  run_once: true
+
+- name: Remove rancher repo
+  kubernetes.core.helm_repository:
+    name: rancher-stable
+    state: absent
+  run_once: true
+
+- name: Remove cattle-system namespace
+  kubernetes.core.k8s:
+    name: cattle-system
+    kind: Namespace
+    state: absent
+  run_once: true
