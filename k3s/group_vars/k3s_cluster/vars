@@ -2,9 +2,6 @@ package_list:
   - name: qemu-guest-agent
   - name: xterm
 
-# specify kube-vip virtual IP with which to access the control plane
-k3s_registration_address: 192.168.100.99
-
 # install kube-vip as a lb for control plane nodes
 k3s_server_manifests_urls:
   - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"

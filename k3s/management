@@ -17,7 +17,6 @@
 192.168.100.30
 192.168.100.31
 192.168.100.32
-192.168.100.33
 
 [k3s_cluster:children]
 k3s_server
@@ -25,3 +24,6 @@ k3s_agent
 
 [k3s_server:vars]
 k3s_control_node=true
+
+[k3s_cluster:vars]
+k3s_registration_address=192.168.100.99
