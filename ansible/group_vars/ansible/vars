@@ -6,5 +6,11 @@ package_list:
   - name: python3-netaddr
   - name: vim
   - name: git
-  - name: apache2-utils
-  - name: iputils-ping
+  - name: htpasswd
+    apt: apache2-utils
+    yum: httpd-tools
+    dnf: httpd-tools
+  - name: ping
+    apt: iputils-ping
+    yum: httpd-tools
+    dnf: iputils

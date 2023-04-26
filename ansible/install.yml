@@ -4,5 +4,7 @@
     ansible_install_method: pip
   roles:
     - grog.package
+    - role: geerlingguy.repo-epel
+      when: ansible_os_family == 'RedHat'
     - geerlingguy.security
     - geerlingguy.ansible
