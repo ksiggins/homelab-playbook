@@ -1,3 +1,16 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Patch grog.package
+      copy:
+        src: roles_/grog.package/
+        dest: .ansible/roles/grog.package/
+    - name: Patch geerlingguy.security
+      copy:
+        src: roles_/geerlingguy.security/
+        dest: .ansible/roles/geerlingguy.security/
+
 - hosts: ansible
   become: true
   vars:
