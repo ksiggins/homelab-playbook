@@ -1,2 +1,4 @@
 package_list:
+  - name: qemu-guest-agent
+  - name: xterm
   - name: nfs-kernel-server
