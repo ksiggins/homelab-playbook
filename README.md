@@ -7,6 +7,12 @@ rm -rf .ansible
 ansible-galaxy install -r requirements.yml
 ```
 
+## Python
+To update python dependencies, use pip-compile:
+```
+pip-compile requirements.in --no-header --no-annotate --output-file requirements.txt
+```
+
 ## Ansible Vault
 To create a new encrypted data file, run the following command:
 

@@ -1,23 +1,18 @@
-- hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
-    - name: Patch grog.package
-      copy:
-        src: roles_/grog.package/
-        dest: .ansible/roles/grog.package/
-    - name: Patch geerlingguy.security
-      copy:
-        src: roles_/geerlingguy.security/
-        dest: .ansible/roles/geerlingguy.security/
-
+---
 - hosts: ansible
   become: true
-  vars:
-    ansible_install_method: pip
-  roles:
-    - grog.package
-    - role: geerlingguy.repo-epel
+
+  pre_tasks:
+    - import_tasks: tasks/setup-Archlinux.yml
+      when: ansible_os_family == 'Archlinux'
+
+    - import_tasks: tasks/setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+
+    - import_tasks: tasks/setup-RedHat.yml
       when: ansible_os_family == 'RedHat'
+
+    - import_tasks: tasks/setup-pip.yml
+
+  roles:
     - geerlingguy.security
-    - geerlingguy.ansible
