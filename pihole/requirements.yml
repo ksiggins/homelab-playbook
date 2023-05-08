@@ -1,8 +1,6 @@
 roles:
   - name: geerlingguy.security
     version: 2.2.0
-  - name: grog.package
-    version: v1.3.1
   - name: r_pufky.pihole
     version: 1.0.3
   - name: do1jlr.unbound

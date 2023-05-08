@@ -1,3 +1,4 @@
+---
 - name: Remove custom list file
   file:
     path: "{{ pihole_dns_list_file }}"
