@@ -1,6 +1,11 @@
+---
 - hosts: plex
   become: true
+
+  pre_tasks:
+    - import_tasks: tasks/setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+
   roles:
-    - grog.package
     - geerlingguy.security
     - geerlingguy.docker

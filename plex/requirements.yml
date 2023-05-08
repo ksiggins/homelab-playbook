@@ -3,5 +3,3 @@ roles:
     version: 2.2.0
   - name: geerlingguy.docker
     version: 6.1.0
-  - name: grog.package
-    version: v1.3.1
