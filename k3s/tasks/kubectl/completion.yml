@@ -1,3 +1,4 @@
+---
 - name: Add kubectl alias and autocomplete to bashrc
   blockinfile:
     path: ~/.bashrc

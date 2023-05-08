@@ -1,3 +1,4 @@
+---
 - name: Copy the kubeconfig file to tmp
   become: true
   copy:
