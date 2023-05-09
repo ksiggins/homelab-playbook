@@ -1,10 +1,4 @@
 ---
-- name: Remove kube directory
-  file:
-    path: ~/.kube
-    state: absent
-  when: inventory_hostname in groups['ansible']
-
 - name: Create kube directory
   file:
     path: ~/.kube
@@ -24,8 +18,16 @@
 - name: Copy the kubeconfig file to ansible host
   copy:
     src: /tmp/kubeconfig
-    dest: ~/.kube/config
+    dest: ~/.kube/config-{{ inventory }}
     mode: 0600
+  when: inventory_hostname in groups['ansible']
+
+- name: Add kubeconfig env to bashrc for multi-cluster access
+  blockinfile:
+    path: ~/.bashrc
+    marker: "# {mark} ANSIBLE MANAGED BLOCK {{ inventory | upper }}"
+    block: |
+      export KUBECONFIG="${KUBECONFIG}:${HOME}/.kube/config-{{ inventory }}"
   when: inventory_hostname in groups['ansible']
 
 - name: Clean tmp kubeconfig

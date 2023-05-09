@@ -26,5 +26,6 @@ k3s_agent
 [k3s_server:vars]
 k3s_control_node=true
 
+# specify kube-vip virtual IP with which to access the control plane
 [k3s_cluster:vars]
 k3s_registration_address=192.168.100.99

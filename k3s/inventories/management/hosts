@@ -9,21 +9,16 @@
 #   you wish to remove and run update.yml playbook
 #   192.168.100.30 k3s_state=uninstalled
 [k3s_server]
-192.168.100.23
-192.168.100.24
-192.168.100.25
-
-[k3s_agent]
-192.168.100.33
-192.168.100.34
-192.168.100.35
+192.168.100.40
+192.168.100.41
+192.168.100.42
 
 [k3s_cluster:children]
 k3s_server
-k3s_agent
 
 [k3s_server:vars]
 k3s_control_node=true
 
+# specify kube-vip virtual IP with which to access the control plane
 [k3s_cluster:vars]
 k3s_registration_address=192.168.100.98

@@ -17,3 +17,10 @@ k3s_server:
 # worker node configuration with HA control plane
 k3s_agent:
   node-ip: "{{ ansible_host }}"
+
+# install kube-vip as a lb for control plane nodes
+k3s_server_manifests_urls:
+  - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"
+    filename: kube-vip-rbac.yaml
+k3s_server_manifests_templates:
+  - templates/kube-vip/daemonset.yaml

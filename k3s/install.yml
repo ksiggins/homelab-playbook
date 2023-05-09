@@ -20,6 +20,10 @@
     - andrewrothstein.kubectl
 
 - hosts: all
+
+  vars:
+    inventory: "{{ inventory_dir | basename }}"
+
   tasks:
     - import_tasks: tasks/kubeconfig/src.yml
     - import_tasks: tasks/kubeconfig/dest.yml

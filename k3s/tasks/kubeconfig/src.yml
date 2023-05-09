@@ -18,3 +18,10 @@
     endpoint_url: >-
       https://{{ k3s_registration_address | default(ansible_host) }}:6443
   when: inventory_hostname in groups['k3s_server']
+
+- name: Configure kubectl cluster for multi-cluster access
+  replace:
+    path: /tmp/kubeconfig
+    regexp: default
+    replace: "{{ inventory }}"
+  when: inventory_hostname in groups['k3s_server']
