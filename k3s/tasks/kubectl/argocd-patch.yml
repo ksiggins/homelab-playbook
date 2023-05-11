@@ -1,0 +1,19 @@
+---
+- name: Check to see if argocd-server is running
+  command: >-
+    kubectl get svc argocd-server
+    -o jsonpath="{.spec.type}"
+    --kubeconfig "${HOME}/.kube/config-{{ inventory }}"
+  register: argocd_spec_type
+  changed_when: false
+  failed_when: argocd_spec_type.rc > 1
+  run_once: true
+  when: inventory_hostname in groups['ansible']
+
+- name: Change the argocd-server to a load balancer type
+  command: >-
+    kubectl patch svc argocd-server
+    -p '{"spec": { "type": "LoadBalancer" }}'
+    --kubeconfig "${HOME}/.kube/config-{{ inventory }}"
+  run_once: true
+  when: inventory_hostname in groups['ansible'] and argocd_spec_type.stdout != "LoadBalancer"

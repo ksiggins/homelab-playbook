@@ -13,8 +13,20 @@ k3s_server:
     - traefik
 
 # install kube-vip as a lb for control plane nodes
+# install argocd as a gitops continuous delivery tool for kubernetes
 k3s_server_manifests_urls:
   - url: "https://raw.githubusercontent.com/kube-vip/kube-vip/{{ kube_vip_version }}/docs/manifests/rbac.yaml"
     filename: kube-vip-rbac.yaml
+  - url: "https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/{{ kube_vip_cloud_controller_version }}/manifest/kube-vip-cloud-controller.yaml"
+    filename: kube-vip-cloud-controller.yaml
+  - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/crds/application-crd.yaml"
+    filename: argocd-application-crd.yaml
+  - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/crds/applicationset-crd.yaml"
+    filename: argocd-applicationset-crd.yaml
+  - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/crds/appproject-crd.yaml"
+    filename: argocd-appproject-crd.yaml
+  - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/ha/namespace-install.yaml"
+    filename: argocd-install.yaml
 k3s_server_manifests_templates:
   - templates/kube-vip/daemonset.yaml
+  - templates/kube-vip/configmap.yaml
