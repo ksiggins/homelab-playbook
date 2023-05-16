@@ -27,12 +27,11 @@
     regexp: default
     replace: "{{ inventory }}"
 
-- name: Add kubeconfig env to bashrc for multi-cluster access
-  blockinfile:
+- name: Set kubeconfig env in bashrc for multi-cluster access
+  lineinfile:
     path: "{{ ansible_user_dir }}/.bashrc"
-    marker: "# {mark} ANSIBLE MANAGED BLOCK {{ inventory | upper }}"
-    block: |
-      export KUBECONFIG="${KUBECONFIG}:${HOME}/.kube/config-{{ inventory }}"
+    regexp: ^export KUBECONFIG=${KUBECONFIG}:${HOME}/.kube/config-{{ inventory }}
+    line: export KUBECONFIG=${KUBECONFIG}:${HOME}/.kube/config-{{ inventory }}
 
 - name: Clean tmp kubeconfig
   file:

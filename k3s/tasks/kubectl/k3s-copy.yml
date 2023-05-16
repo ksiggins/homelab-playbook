@@ -21,14 +21,8 @@
       --kubeconfig {{ ansible_user_dir }}/.kube/config
   changed_when: true
 
-- name: Configure kubeconfig env in bashrc
-  blockinfile:
+- name: Set kubeconfig env in bashrc
+  lineinfile:
     path: "{{ ansible_user_dir }}/.bashrc"
-    block: |
-      # enable kubectl alias and autocomplete
-      source <(kubectl completion bash)
-      alias k=kubectl
-      complete -o default -F __start_kubectl k
-
-      # set kubeconfig to home
-      export KUBECONFIG="${HOME}/.kube/config"
+    regexp: ^export KUBECONFIG=${HOME}/.kube/config
+    line: export KUBECONFIG=${HOME}/.kube/config

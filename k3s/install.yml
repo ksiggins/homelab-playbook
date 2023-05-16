@@ -1,33 +1,31 @@
 ---
 - hosts: k3s_cluster
-  become: true
-
   pre_tasks:
     - import_tasks: tasks/setup-Debian.yml
+      become: true
       when: ansible_os_family == 'Debian'
 
   roles:
-    - geerlingguy.security
-    - geerlingguy.docker
+    - role: geerlingguy.security
+      become: true
+    - role: geerlingguy.docker
+      become: true
+    - role: xanmanning.k3s
 
-- hosts: ansible
-  become: true
-
-  roles:
-    - andrewrothstein.kubectl
-
-- hosts: k3s_cluster
-  roles:
-    - xanmanning.k3s
-
+- hosts: k3s_server
   tasks:
-    - import_tasks: tasks/kubeconfig/k3s-copy.yml
+    - import_tasks: tasks/kubectl/completion.yml
+    - import_tasks: tasks/kubectl/k3s-copy.yml
 
 - hosts: ansible
   vars:
     inventory: "{{ inventory_dir | basename }}"
 
+  roles:
+    - role: andrewrothstein.kubectl
+      become: true
+
   tasks:
-    - import_tasks: tasks/kubeconfig/ansible-fetch.yml
     - import_tasks: tasks/kubectl/completion.yml
+    - import_tasks: tasks/kubectl/ansible-fetch.yml
     - import_tasks: tasks/kubectl/argocd-patch.yml
