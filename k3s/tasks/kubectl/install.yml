@@ -1,0 +1,21 @@
+---
+- name: Get os platform
+  command: >-
+    uname
+  ignore_errors: true
+  changed_when: false
+  register: uname_result
+
+- name: Create architecture mapping
+  set_fact: 
+    arch_map: "{{ arch_map | default({}) | combine ({ item.key : item.value }) }}"
+  with_items:
+    - { 'key': 'x86_64' , 'value': 'amd64'}
+    - { 'key': 'aarch64' , 'value': 'arm64'}
+
+- name: Download kubectl to /usr/local/bin
+  get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/{{ uname_result.stdout | lower }}/{{ arch_map[ansible_architecture] }}/kubectl"
+    dest: /usr/local/bin
+    checksum: "sha256:https://dl.k8s.io/release/{{ kubectl_version }}/bin/{{ uname_result.stdout | lower }}/{{ arch_map[ansible_architecture] }}/kubectl.sha256"
+    mode: 0755

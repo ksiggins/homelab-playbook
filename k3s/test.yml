@@ -1,0 +1,4 @@
+- hosts: ansible
+  tasks: 
+    - import_tasks: tasks/kubectl/install.yml
+      become: true

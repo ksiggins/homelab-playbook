@@ -22,10 +22,8 @@
   vars:
     inventory: "{{ inventory_dir | basename }}"
 
-  roles:
-    - role: andrewrothstein.kubectl
-      become: true
-
   tasks:
+    - import_tasks: tasks/kubectl/install.yml
+      become: true
     - import_tasks: tasks/kubectl/completion.yml
     - import_tasks: tasks/kubectl/ansible-fetch.yml
