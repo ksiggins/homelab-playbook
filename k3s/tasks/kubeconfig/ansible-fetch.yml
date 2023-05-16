@@ -1,34 +1,38 @@
 ---
 - name: Create kube directory
   file:
-    path: ~/.kube
+    path: "{{ ansible_user_dir }}/.kube"
     state: directory
     mode: 0700
   when: inventory_hostname in groups['ansible']
 
 - name: Fetch the kubeconfig file from the k3s cluster
+  delegate_to: "{{ groups['k3s_cluster'][0] }}"
   fetch:
-    src: /tmp/kubeconfig
+    src: "{{ ansible_user_dir }}/.kube/config"
     dest: /tmp/kubeconfig
     flat: true
     validate_checksum: false
     run_once: true
-  when: inventory_hostname in groups['k3s_server']
 
 - name: Copy the kubeconfig file to ansible host
   copy:
     src: /tmp/kubeconfig
-    dest: ~/.kube/config-{{ inventory }}
+    dest: "{{ ansible_user_dir }}/.kube/config-{{ inventory }}"
     mode: 0600
-  when: inventory_hostname in groups['ansible']
+
+- name: Configure kubectl cluster for multi-cluster access
+  replace:
+    path: "{{ ansible_user_dir }}/.kube/config-{{ inventory }}"
+    regexp: default
+    replace: "{{ inventory }}"
 
 - name: Add kubeconfig env to bashrc for multi-cluster access
   blockinfile:
-    path: ~/.bashrc
+    path: "{{ ansible_user_dir }}/.bashrc"
     marker: "# {mark} ANSIBLE MANAGED BLOCK {{ inventory | upper }}"
     block: |
       export KUBECONFIG="${KUBECONFIG}:${HOME}/.kube/config-{{ inventory }}"
-  when: inventory_hostname in groups['ansible']
 
 - name: Clean tmp kubeconfig
   file:
