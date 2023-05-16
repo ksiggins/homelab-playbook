@@ -3,7 +3,7 @@
   command: >-
     kubectl get svc argocd-server
     -o jsonpath="{.spec.type}"
-    --kubeconfig "{{ ansible_user_dir }}/.kube/config-{{ inventory }}"
+    --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   register: argocd_spec_type
   changed_when: false
   failed_when: argocd_spec_type.rc > 1
@@ -13,7 +13,7 @@
   command: >-
     kubectl patch svc argocd-server
     -p '{"spec": { "type": "LoadBalancer" }}'
-    --kubeconfig "{{ ansible_user_dir }}/.kube/config-{{ inventory }}"
+    --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   run_once: true
   when: argocd_spec_type.stdout != "LoadBalancer"
 
@@ -24,6 +24,6 @@
       "admin.password": "{{ argocd_bcrypt_password }}",
       "admin.passwordMtime": "$(date +%FT%T%Z)"
     }}'
-    --kubeconfig "{{ ansible_user_dir }}/.kube/config-{{ inventory }}"
+    --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   changed_when: true
   run_once: true
