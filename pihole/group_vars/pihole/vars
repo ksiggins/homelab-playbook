@@ -17,3 +17,5 @@ pihole_dns_records:
     ip: 192.168.100.80
   - fqdn: grafana.local.supermorphic.com
     ip: 192.168.100.80
+  - fqdn: argocd.local.supermorphic.com
+    ip: 192.168.100.96
