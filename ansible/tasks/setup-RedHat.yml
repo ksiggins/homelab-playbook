@@ -60,6 +60,6 @@
   changed_when: needs_restart_result.rc == 1
   failed_when: needs_restart_result.rc > 1
 
-- name: Reboot if required (if required)
+- name: Reboot if required
   reboot:
   when: needs_restart_result.rc == 1

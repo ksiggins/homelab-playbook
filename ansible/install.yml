@@ -7,15 +7,7 @@
   become: true
 
   pre_tasks:
-    - import_tasks: tasks/setup-Archlinux.yml
-      when: ansible_os_family == 'Archlinux'
-
-    - import_tasks: tasks/setup-Debian.yml
-      when: ansible_os_family == 'Debian'
-
-    - import_tasks: tasks/setup-RedHat.yml
-      when: ansible_os_family == 'RedHat'
-
+    - include_tasks: tasks/setup-{{ ansible_os_family }}.yml
     - import_tasks: tasks/setup-pip.yml
 
   roles:
