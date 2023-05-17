@@ -17,6 +17,7 @@
     - import_tasks: tasks/kubectl/completion.yml
     - import_tasks: tasks/kubectl/k3s-copy.yml
     - import_tasks: tasks/argocd/patch.yml
+      when: argocd_version is defined
 
 - hosts: ansible
   vars:
@@ -25,7 +26,8 @@
   tasks:
     - import_tasks: tasks/kubectl/install.yml
       become: true
-    - import_tasks: tasks/argocd/install.yml
-      become: true
     - import_tasks: tasks/kubectl/completion.yml
     - import_tasks: tasks/kubectl/ansible-fetch.yml
+    - import_tasks: tasks/argocd/install.yml
+      become: true
+      when: argocd_version is defined
