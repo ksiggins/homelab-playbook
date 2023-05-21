@@ -1,7 +1,7 @@
 ---
 - name: Check to see if argocd-server is running
   command: >-
-    kubectl get svc argocd-server
+    kubectl get service argocd-server
     -o jsonpath="{.spec.type}"
     --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   register: argocd_spec_type
@@ -11,7 +11,7 @@
 
 - name: Change the argocd-server to a load balancer type
   command: >-
-    kubectl patch svc argocd-server
+    kubectl patch service argocd-server
     -p '{"spec": { "type": "LoadBalancer" }}'
     --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   run_once: true
@@ -24,6 +24,13 @@
       "admin.password": "{{ argocd_bcrypt_password }}",
       "admin.passwordMtime": "$(date +%FT%T%Z)"
     }}'
+    --kubeconfig "{{ ansible_user_dir }}/.kube/config"
+  changed_when: true
+  run_once: true
+
+- name: Delete argocd-initial-admin-secret
+  command: >-
+    kubectl delete secret argocd-initial-admin-secret
     --kubeconfig "{{ ansible_user_dir }}/.kube/config"
   changed_when: true
   run_once: true
