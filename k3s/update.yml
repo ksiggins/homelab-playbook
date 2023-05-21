@@ -1,8 +1,9 @@
 ---
 - hosts: k3s_cluster
   pre_tasks:
-    - include_tasks: tasks/setup-{{ ansible_os_family }}.yml
+    - import_tasks: tasks/setup-Debian.yml
       become: true
+      when: ansible_os_family == 'Debian'
 
   roles:
     - xanmanning.k3s

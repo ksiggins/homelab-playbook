@@ -3,7 +3,8 @@
   become: true
 
   pre_tasks:
-    - include_tasks: tasks/setup-{{ ansible_os_family }}.yml
+    - import_tasks: tasks/setup-Debian.yml
+      when: ansible_os_family == 'Debian'
 
   roles:
     - geerlingguy.security
