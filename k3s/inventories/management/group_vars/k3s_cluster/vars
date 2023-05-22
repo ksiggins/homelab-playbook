@@ -27,6 +27,8 @@ k3s_server_manifests_urls:
     filename: argocd-appproject-crd.yaml
   - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/ha/namespace-install.yaml"
     filename: argocd-install.yaml
+  - url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/cluster-rbac/application-controller/argocd-application-controller-clusterrolebinding.yaml"
+    filename: argocd-application-controller-clusterrolebinding.yaml
 k3s_server_manifests_templates:
   - templates/kube-vip/daemonset.yaml
   - templates/kube-vip/configmap.yaml
