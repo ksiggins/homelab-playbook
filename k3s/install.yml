@@ -23,6 +23,10 @@
   vars:
     inventory: "{{ inventory_dir | basename }}"
 
+  roles:
+    - role: geerlingguy.helm
+      become: true
+
   tasks:
     - import_tasks: tasks/kubectl/install.yml
       become: true
