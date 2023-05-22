@@ -3,4 +3,3 @@ kube_vip_version: v0.5.12
 kube_vip_cloud_controller_version: v0.0.5
 argocd_version: v2.7.1
 kubectl_version: v1.24.12
-helm_version: v3.11.3

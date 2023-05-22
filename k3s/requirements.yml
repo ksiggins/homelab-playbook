@@ -3,7 +3,5 @@ roles:
     version: 2.2.0
   - name: geerlingguy.docker
     version: 6.1.0
-  - name: geerlingguy.helm
-    version: 1.0.1
   - name: xanmanning.k3s
     version: v3.3.1
