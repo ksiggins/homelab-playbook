@@ -9,7 +9,7 @@ k3s_server:
   node-ip: "{{ ansible_host }}"
   tls-san: "{{ k3s_registration_address | default(omit) }}"
   node-taint:
-    - 'CriticalAddonsOnly=true:NoExecute'
+    - "CriticalAddonsOnly=true:NoExecute"
   disable:
     - servicelb
     - traefik
@@ -17,6 +17,8 @@ k3s_server:
 # worker node configuration with HA control plane
 k3s_agent:
   node-ip: "{{ ansible_host }}"
+  node-label:
+    - "node-role.kubernetes.io/role=worker"
 
 # install kube-vip as a lb for control plane nodes
 k3s_server_manifests_urls:
