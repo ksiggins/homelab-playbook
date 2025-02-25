@@ -1,0 +1,50 @@
+services:
+  semaphore:
+    image: semaphoreui/semaphore:v2.12.14
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    environment:
+      SEMAPHORE_DB_DIALECT: postgres
+      SEMAPHORE_DB_HOST: postgres
+      SEMAPHORE_DB_NAME: {{ semaphore_db_name }}
+      SEMAPHORE_DB_USER: {{ semaphore_db_user }}
+      SEMAPHORE_DB_PASS: {{ semaphore_db_password }}
+      SEMAPHORE_ADMIN: {{ semaphore_admin }}
+      SEMAPHORE_ADMIN_PASSWORD: {{ semaphore_admin_password }}
+      SEMAPHORE_ADMIN_NAME: {{ semaphore_admin_name }}
+      SEMAPHORE_ADMIN_EMAIL: {{ semaphore_admin_email }}
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: {{ semaphore_access_key_encryption }}
+      ANSIBLE_HOST_KEY_CHECKING: False
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - config:/var/lib/semaphore
+      - config:/etc/semaphore
+  postgres:
+    image: postgres:17.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: {{ semaphore_db_user }}
+      POSTGRES_PASSWORD: {{ semaphore_db_password }}
+      POSTGRES_DB: {{ semaphore_db_name }}
+    volumes:
+      - data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  config:
+    driver_opts:
+      type: cifs
+      o: "username={{ samba_share_username }},password={{ samba_share_password }},uid=1001,gid=0,rw"
+      device: "{{ samba_share_drive }}/config"
+  data:
+    driver_opts:
+      type: cifs
+      o: "username={{ samba_share_username }},password={{ samba_share_password }},uid=999,gid=999,dir_mode=0700,file_mode=0750,rw"
+      device: "{{ samba_share_drive }}/data"

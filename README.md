@@ -13,6 +13,14 @@ To update python dependencies, use pip-compile:
 pip-compile requirements.in --no-header --no-annotate --output-file requirements.txt
 ```
 
+## Ansible Facts
+Ansible facts are data related to your remote systems, including operating systems, IP addresses, attached filesystems, and more. You can access this data in the ansible_facts variable.
+
+To see the ‘raw’ information as gathered, run this command at the command line:
+```
+ansible <hostname> -m ansible.builtin.setup
+```
+
 ## Ansible Vault
 To create a new encrypted data file, run the following command:
 

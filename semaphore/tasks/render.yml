@@ -1,0 +1,4 @@
+- name: Render jinja2 template
+  template:
+    src: templates/docker-compose.yaml
+    dest: "{{ ansible_user_dir }}/docker-compose.yaml"
