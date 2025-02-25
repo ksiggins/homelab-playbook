@@ -1,4 +1,6 @@
 - name: Render jinja2 template
-  template:
+  ansible.builtin.template:
     src: templates/docker-compose.yaml
     dest: "{{ ansible_user_dir }}/docker-compose.yaml"
+    mode: 0644
+    become: false
