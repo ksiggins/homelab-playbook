@@ -1,5 +1,6 @@
 # database
 semaphore_db_name: semaphore
 
-# samba share
-samba_share_drive: //192.168.0.3/Semaphore
+# db backups
+db_dump_retention: 10c
+db_dump_cron: 0 0 * * *
