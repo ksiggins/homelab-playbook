@@ -1,0 +1,22 @@
+---
+- hosts: servers
+  gather_facts: no
+
+  vars:
+    playbook_dir: "{{ ansible_playbook_python | regex_replace('/bin/python.*', '') }}"
+  tasks:
+    - import_tasks: tasks/setup-python.yml
+
+- hosts: servers
+  become: true
+
+  pre_tasks:
+    - import_tasks: tasks/setup-Archlinux.yml
+      when: ansible_os_family == 'Archlinux'
+    - import_tasks: tasks/setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+    - import_tasks: tasks/setup-RedHat.yml
+      when: ansible_os_family == 'RedHat'
+
+  roles:
+    - geerlingguy.security

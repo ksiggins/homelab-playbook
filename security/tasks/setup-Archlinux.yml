@@ -1,0 +1,22 @@
+---
+- name: pacman
+  pacman:
+    name:
+      - qemu-guest-agent
+      - xterm
+      - vi
+      - tree
+      - which
+      - git
+      - apache
+      - iputils
+      - fail2ban
+    state: present
+    update_cache: yes
+
+- name: Patch geerlingguy.security
+  delegate_to: localhost
+  become: false
+  copy:
+    src: geerlingguy.security/
+    dest: "{{ playbook_dir }}/.ansible/roles/geerlingguy.security/"

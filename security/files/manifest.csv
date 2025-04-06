@@ -1,0 +1,6 @@
+DISTRO,VERSION,ARCH,USER
+debian,11,arm64,admin
+debian,12,arm64,admin
+ubuntu,noble,arm64,admin
+rocky,9,arm64,admin
+arch,,arm64,admin
