@@ -1,21 +1,9 @@
 pihole_dns_records:
-  - fqdn: pihole.home.arpa
-    ip: 192.168.100.15
-  - fqdn: pihole2.home.arpa
-    ip: 192.168.100.16
-  - fqdn: plex.home.arpa
-    ip: 192.168.100.17
-  - fqdn: traefik.local.supermorphic.com
-    ip: 192.168.100.80
-  - fqdn: truenas.home.arpa
-    ip: 192.168.100.10
-  - fqdn: nginx.local.supermorphic.com
-    ip: 192.168.100.80
-  - fqdn: rancher.local.supermorphic.com
-    ip: 192.168.100.80
-  - fqdn: prometheus.local.supermorphic.com
-    ip: 192.168.100.80
-  - fqdn: grafana.local.supermorphic.com
-    ip: 192.168.100.80
-  - fqdn: argocd.local.supermorphic.com
-    ip: 192.168.100.96
+  - 192.168.100.80 traefik.local.supermorphic.com
+  - 192.168.100.80 nginx.local.supermorphic.com
+  - 192.168.100.80 rancher.local.supermorphic.com
+  - 192.168.100.80 prometheus.local.supermorphic.com
+  - 192.168.100.80 grafana.local.supermorphic.com
+  - 192.168.100.96 argocd.local.supermorphic.com
+
+pihole_dns_cname_records: []

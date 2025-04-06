@@ -1,7 +1,5 @@
 roles:
-  - name: geerlingguy.security
-    version: 2.2.0
   - name: r_pufky.pihole
-    version: 1.0.3
-  - name: do1jlr.unbound
+    version: 3.0.4
+  - name: l3d.unbound
     version: v1.1.0

@@ -2,14 +2,9 @@
 - hosts: pihole
   become: true
 
-  pre_tasks:
-    - import_tasks: tasks/setup-Debian.yml
-      when: ansible_os_family == 'Debian'
-
   roles:
-    - geerlingguy.security
     - r_pufky.pihole
-    - do1jlr.unbound
+    - l3d.unbound
 
   tasks:
     - import_tasks: tasks/restart-dns.yml
