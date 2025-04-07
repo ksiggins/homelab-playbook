@@ -1,6 +1,8 @@
 ---
-- name: Update yum cache and run security upgrade
+- name: Ensure the system is up-to-date and clean cache
   yum:
+    name: '*'
+    state: latest
     update_cache: true
     security: true
 
@@ -17,7 +19,7 @@
       - iputils
       - openssh-server
 
-- name: Check if EPEL repo is already configured.
+- name: Check if EPEL repo is already configured
   stat:
     path: "/etc/yum.repos.d/epel.repo"
   register: epel_repofile_result
@@ -43,7 +45,7 @@
   delay: 10
   when: not epel_repofile_result.stat.exists
 
-- name: Disable Main EPEL repo.
+- name: Disable Main EPEL repo
   ini_file:
     path: "/etc/yum.repos.d/epel.repo"
     section: epel

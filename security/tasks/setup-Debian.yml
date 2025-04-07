@@ -1,9 +1,10 @@
 ---
-- name: Update apt cache and run dist upgrade
+- name: Ensure the system is up-to-date, clean cache, and remove unused packages
   apt:
     update_cache: yes
     upgrade: dist
     autoremove: yes
+    autoclean: yes
     force_apt_get: yes
 
 - name: Install packages via apt

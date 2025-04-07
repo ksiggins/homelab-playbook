@@ -1,9 +1,9 @@
 ---
 - hosts: servers
   gather_facts: no
-
   vars:
     playbook_dir: "{{ ansible_playbook_python | regex_replace('/bin/python.*', '') }}"
+
   tasks:
     - import_tasks: tasks/setup-python.yml
 
