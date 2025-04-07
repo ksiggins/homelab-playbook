@@ -1,19 +1,6 @@
 ---
-- hosts: localhost
-  connection: local
-  gather_facts: true
-
 - hosts: ansible
   become: true
 
-  pre_tasks:
-    - import_tasks: tasks/setup-Archlinux.yml
-      when: ansible_os_family == 'Archlinux'
-    - import_tasks: tasks/setup-Debian.yml
-      when: ansible_os_family == 'Debian'
-    - import_tasks: tasks/setup-RedHat.yml
-      when: ansible_os_family == 'RedHat'
+  tasks:
     - import_tasks: tasks/setup-pip.yml
-
-  roles:
-    - geerlingguy.security

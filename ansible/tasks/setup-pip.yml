@@ -5,9 +5,5 @@
 
 - name: Install python packages via pip
   pip:
+    break_system_packages: true
     requirements: /tmp/requirements.txt
-
-- name: Clean tmp requirements.txt
-  file:
-    path: /tmp/requirements.txt
-    state: absent

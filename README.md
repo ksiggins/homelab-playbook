@@ -10,7 +10,7 @@ ansible-galaxy install -r requirements.yml
 ## Python
 To update python dependencies, use pip-compile:
 ```
-pip-compile requirements.in --no-header --no-annotate --output-file requirements.txt
+pip-compile requirements.in --no-header --no-annotate --strip-extras --output-file requirements.txt
 ```
 
 ## Ansible Facts

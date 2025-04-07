@@ -1,4 +1,5 @@
 [ansible]
-192.168.100.11
-192.168.100.12
-192.168.100.13
+admin@debian11@orb ansible_user=admin@debian11
+admin@debian12@orb ansible_user=admin@debian12
+admin@rocky9@orb ansible_user=admin@rocky9
+admin@arch@orb ansible_user=admin@arch
