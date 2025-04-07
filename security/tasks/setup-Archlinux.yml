@@ -20,3 +20,12 @@
   copy:
     src: geerlingguy.security/
     dest: "{{ playbook_dir }}/.ansible/roles/geerlingguy.security/"
+
+- name: Ensure the English locale exists
+  locale_gen:
+    name: en_US.UTF-8
+    state: present
+
+- name: Set the English locale as default
+  command: >-
+    localectl set-locale LANG=en_US.UTF-8
