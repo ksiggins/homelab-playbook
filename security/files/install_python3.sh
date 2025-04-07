@@ -34,6 +34,7 @@ install_python3_arch() {
 }
 
 # Exit success if python3 is already installed
+# Escape '$' when used during echo command to download script on remote host using raw mode
 check_python3
 if [ \$? -eq 0 ]; then
   exit 0
@@ -54,6 +55,7 @@ else
 fi
 
 # Verify installation
+# Escape '$' when used during echo command to download script on remote host using raw mode
 check_python3
 if [ \$? -eq 0 ]; then
   echo "Python3 installation was successful."
