@@ -43,11 +43,11 @@ else
 fi
 
 # Detect the operating system and install python3 accordingly
-if [ -f /etc/debian_version ]; then
+if grep -qi 'debian\|raspbian' /etc/os-release; then
     install_python3_debian
-elif [ -f /etc/redhat-release ]; then
+elif grep -qi 'rhel\|centos\|fedora' /etc/os-release; then
     install_python3_redhat
-elif [ -f /etc/arch-release ]; then
+elif grep -qi 'arch' /etc/os-release; then
     install_python3_arch
 else
     echo "Unsupported Linux distribution."
