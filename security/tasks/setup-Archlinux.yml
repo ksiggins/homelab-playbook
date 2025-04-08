@@ -11,6 +11,7 @@
       - apache
       - iputils
       - fail2ban
+      - neofetch
     state: present
     update_cache: yes
 

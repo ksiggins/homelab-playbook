@@ -20,6 +20,7 @@
       - httpd-tools
       - iputils
       - openssh-server
+      - neofetch
 
 - name: Check if EPEL repo is already configured
   stat:

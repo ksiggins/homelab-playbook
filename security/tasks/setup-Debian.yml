@@ -22,6 +22,7 @@
       - apache2-utils
       - iputils-ping
       - openssh-server
+      - neofetch
 
 - name: Check if reboot is required
   stat:
