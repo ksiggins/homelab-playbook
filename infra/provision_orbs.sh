@@ -2,25 +2,30 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 CSV_FILE="$SCRIPT_DIR/manifest.csv"
-TARGETS=("$@")
+
+TARGETS=()
+DELETE_ONLY=0
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [ORBNAME1 [ORBNAME2 ...]]
+Usage: $(basename "$0") [OPTIONS] [ORBNAME1 [ORBNAME2 ...]]
 
-Recreates orbs based on entries in the manifest.csv file.
+Provisions orbs based on entries in the manifest.csv file.
 
 Arguments:
   ORBNAME       Optional. Format: <distro><version> (e.g. rocky9, debian12).
-                If omitted, all orbs in the manifest will be recreated.
-
-Examples:
-  $(basename "$0") rocky9              Recreate only the 'rocky9' orb
-  $(basename "$0") debian12 arch       Recreate multiple orbs
-  $(basename "$0")                     Recreate all orbs from manifest
+                If omitted, all orbs in the manifest will be processed.
 
 Options:
-  -h, --help      Show this help message and exit
+  -d, --delete   Only delete the specified orbs (or all if none specified)
+  -h, --help     Show this help message and exit
+
+Examples:
+  $(basename "$0")                    Recreate all orbs from manifest
+  $(basename "$0") rocky9             Recreate only 'rocky9'
+  $(basename "$0") debian12 arch      Recreate specific orbs
+  $(basename "$0") --delete           Delete all orbs from manifest
+  $(basename "$0") --delete rocky9    Delete only 'rocky9'
 EOF
   exit 0
 }
@@ -34,7 +39,7 @@ is_target() {
   return 1
 }
 
-recreate_orb() {
+process_orb() {
   local distro="$1"
   local version="$2"
   local arch="$3"
@@ -46,19 +51,37 @@ recreate_orb() {
   local image
   [[ -n "$version" ]] && image="${distro}:${version}" || image="${distro}"
 
-  orb delete --force "$name"
-  orb create --user "$user" --arch "$arch" "$image" "$name"
+  orb delete --force "$name" >/dev/null 2>&1
+  [[ $DELETE_ONLY -eq 0 ]] && orb create --user "$user" --arch "$arch" "$image" "$name"
 }
 
 main() {
-  case "$1" in
-    -h|--help)
-      usage
-      ;;
-  esac
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        usage
+        ;;
+      -d|--delete)
+        DELETE_ONLY=1
+        shift
+        while [[ $# -gt 0 && "$1" != -* ]]; do
+          TARGETS+=("$1")
+          shift
+        done
+        ;;
+      -*)
+        echo "Unknown option: $1"
+        usage
+        ;;
+      *)
+        TARGETS+=("$1")
+        shift
+        ;;
+    esac
+  done
 
   tail -n +2 "$CSV_FILE" | while IFS=, read -r distro version arch user; do
-    recreate_orb "$distro" "$version" "$arch" "$user"
+    process_orb "$distro" "$version" "$arch" "$user"
   done
 }
 
