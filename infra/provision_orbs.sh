@@ -13,7 +13,7 @@ Usage: $(basename "$0") [OPTIONS] [ORBNAME1 [ORBNAME2 ...]]
 Provisions orbs based on entries in the manifest.csv file.
 
 Arguments:
-  ORBNAME       Optional. Format: <distro><version> (e.g. rocky9, debian12).
+  ORBNAME       Optional. NAME (e.g. rocky9-1, debian12-1).
                 If omitted, all orbs in the manifest will be processed.
 
 Options:
@@ -21,11 +21,11 @@ Options:
   -h, --help     Show this help message and exit
 
 Examples:
-  $(basename "$0")                    Recreate all orbs from manifest
-  $(basename "$0") rocky9             Recreate only 'rocky9'
-  $(basename "$0") debian12 arch      Recreate specific orbs
-  $(basename "$0") --delete           Delete all orbs from manifest
-  $(basename "$0") --delete rocky9    Delete only 'rocky9'
+  $(basename "$0")                     Recreate all orbs from manifest
+  $(basename "$0") rocky9-1            Recreate only 'rocky9-1'
+  $(basename "$0") debian12-1 arch-1   Recreate specific orbs
+  $(basename "$0") --delete            Delete all orbs from manifest
+  $(basename "$0") --delete rocky9-1   Delete only 'rocky9-1'
 EOF
   exit 0
 }
@@ -40,11 +40,11 @@ is_target() {
 }
 
 process_orb() {
-  local distro="$1"
-  local version="$2"
-  local arch="$3"
-  local user="$4"
-  local name="${distro}${version}"
+  local name="$1"
+  local distro="$2"
+  local version="$3"
+  local arch="$4"
+  local user="$5"
 
   is_target "$name" || return
 
@@ -64,8 +64,7 @@ main() {
       -d|--delete)
         DELETE_ONLY=1
         shift
-        while [[ $# -gt 0 && "$1" != -* ]]; do
-          TARGETS+=("$1")
+        while [[ $# -gt 0 && "$1" != -* ]]; do TARGETS+=("$1")
           shift
         done
         ;;
@@ -80,8 +79,8 @@ main() {
     esac
   done
 
-  tail -n +2 "$CSV_FILE" | while IFS=, read -r distro version arch user; do
-    process_orb "$distro" "$version" "$arch" "$user"
+  tail -n +2 "$CSV_FILE" | while IFS=, read -r name distro version arch user; do
+    process_orb "$name" "$distro" "$version" "$arch" "$user"
   done
 }
 
