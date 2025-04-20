@@ -1,5 +1,0 @@
----
-- hosts: semaphore
-
-  tasks:
-    - import_tasks: tasks/render.yml

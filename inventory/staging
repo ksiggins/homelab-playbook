@@ -12,3 +12,6 @@ centos9@orb ansible_user=root@centos9
 debian11@orb ansible_user=admin@debian11
 debian12@orb ansible_user=root@debian12
 rocky9@orb ansible_user=root@rocky9
+
+[semaphore]
+127.0.0.1 ansible_connection=local
