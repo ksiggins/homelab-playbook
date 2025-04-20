@@ -1,7 +1,7 @@
 NAME,DISTRO,VERSION,ARCH,USER
-debian11-1,debian,11,arm64,admin
-debian12-1,debian,12,arm64,admin
-debian12-2,debian,12,arm64,admin
-ubuntu24-1,ubuntu,noble,arm64,admin
-rocky9-1,rocky,9,arm64,admin
-arch-1,arch,,arm64,admin
+arch,arch,,arm64,admin
+centos9,centos,,arm64,admin
+debian11,debian,11,arm64,admin
+debian12,debian,12,arm64,admin
+rocky9,rocky,9,arm64,admin
+ubuntu24,ubuntu,noble,arm64,admin

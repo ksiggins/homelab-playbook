@@ -10,7 +10,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS] [ORBNAME1 [ORBNAME2 ...]]
 
-Provisions orbs based on entries in the manifest.csv file.
+Creates orbs based on entries in the manifest.csv file.
 
 Arguments:
   ORBNAME       Optional. NAME (e.g. rocky9-1, debian12-1).
