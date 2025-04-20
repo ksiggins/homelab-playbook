@@ -1,24 +1,24 @@
 ---
 - name: Update package cache and upgrade all packages
-  apt:
-    update_cache: yes
+  ansible.builtin.apt:
+    update_cache: true
     upgrade: dist
-    force_apt_get: yes
+    force_apt_get: true
   register: apt_upgrade
   changed_when: apt_upgrade.changed
 
 - name: Autoremove unused packages
-  apt:
-    autoremove: yes
-    force_apt_get: yes
+  ansible.builtin.apt:
+    autoremove: true
+    force_apt_get: true
 
 - name: Autoclean cached packages
-  apt:
-    autoclean: yes
-    force_apt_get: yes
+  ansible.builtin.apt:
+    autoclean: true
+    force_apt_get: true
 
 - name: Install packages via apt
-  apt:
+  ansible.builtin.apt:
     name:
       - qemu-guest-agent
       - xterm
@@ -35,15 +35,15 @@
       - neofetch
     state: present
     update_cache: false
-    force_apt_get: yes
+    force_apt_get: true
 
 - name: Check if reboot is required
-  stat:
+  ansible.builtin.stat:
     path: /var/run/reboot-required
   register: reboot_required_file
 
 - name: Reboot if required
-  reboot:
+  ansible.builtin.reboot:
     msg: "Reboot triggered due to package update"
     connect_timeout: 5
     reboot_timeout: 600

@@ -1,32 +1,42 @@
 ---
 - name: Fully update the system (all packages)
-  yum:
+  ansible.builtin.dnf:
     name: '*'
     state: latest
     update_cache: true
+    only_upgrade: true  # Ensures that only installed packages are upgraded, no new packages will be installed
 
 - name: Remove old kernels (keep 2)
-  command: package-cleanup --oldkernels --count=2
+  ansible.builtin.shell: |-
+    set -o pipefail
+    package-cleanup --oldkernels --count=2
   when: ansible_distribution_major_version | int < 9
   args:
+    executable: /bin/bash
     warn: false
   register: kernel_cleanup
   changed_when: "'removed' in kernel_cleanup.stdout"
+  failed_when: kernel_cleanup.rc != 0 and "'No packages marked for removal'" not in kernel_cleanup.stdout
 
 - name: Remove orphaned packages (leaf packages not required anymore)
-  command: package-cleanup --leaves --quiet | xargs yum -y remove
+  ansible.builtin.shell: |-
+    set -o pipefail
+    package-cleanup --leaves --quiet | xargs dnf -y remove
   when: ansible_distribution_major_version | int < 9
   args:
+    executable: /bin/bash
     warn: false
-  ignore_errors: true
+  register: cleanup_result
+  changed_when: "false"
+  failed_when: cleanup_result.rc != 0 and "'No packages to remove'" not in cleanup_result.stderr
 
 - name: Remove unneeded packages (autoremove)
-  yum:
-    autoremove: yes
+  ansible.builtin.dnf:
+    autoremove: true
     state: absent
 
 - name: Install EPEL release package
-  yum:
+  ansible.builtin.dnf:
     name: epel-release
     state: present
 
@@ -37,10 +47,11 @@
     option: enabled
     value: '0'
     no_extra_spaces: true
+    mode: '0644'
   when: ansible_distribution_major_version | int >= 8
 
-- name: Install packages via yum (EPEL packages separately with enablerepo)
-  yum:
+- name: Install packages via dnf (EPEL packages separately with enablerepo)
+  ansible.builtin.dnf:
     name:
       - qemu-guest-agent
       - xterm
@@ -53,22 +64,22 @@
       - httpd-tools
       - iputils
       - openssh-server
-  # EPEL is disabled globally, so this is fine
 
 - name: Install from EPEL enabled repo
-  yum:
+  ansible.builtin.dnf:
     name: neofetch
     enablerepo: epel
 
 - name: Check if reboot is required
-  command: needs-restarting -r
+  ansible.builtin.command: >-
+    needs-restarting -r
   ignore_errors: true
   register: needs_restart_result
   changed_when: needs_restart_result.rc == 1
   failed_when: needs_restart_result.rc > 1
 
 - name: Reboot if required
-  reboot:
+  ansible.builtin.reboot:
     msg: "Reboot triggered due to package update"
     connect_timeout: 5
     reboot_timeout: 600
