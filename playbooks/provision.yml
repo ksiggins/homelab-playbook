@@ -1,11 +1,13 @@
 ---
-- hosts: servers
+- name: Prepare systems for Ansible management
+  hosts: servers
   gather_facts: false
 
   roles:
     - robertdebock.bootstrap
 
-- hosts: servers
+- name: Configure OS and apply baseline hardening
+  hosts: servers
   gather_facts: true
 
   roles:
