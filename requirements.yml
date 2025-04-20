@@ -1,5 +1,7 @@
 ---
 roles:
+  - name: robertdebock.bootstrap
+    version: 7.1.1
   - name: geerlingguy.security
     version: 3.0.0
   - name: geerlingguy.docker

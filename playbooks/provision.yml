@@ -1,0 +1,13 @@
+---
+- hosts: servers
+  gather_facts: false
+
+  roles:
+    - robertdebock.bootstrap
+
+- hosts: servers
+  gather_facts: true
+
+  roles:
+    - os_setup
+    - geerlingguy.security

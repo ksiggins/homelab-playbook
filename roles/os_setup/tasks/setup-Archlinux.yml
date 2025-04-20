@@ -1,0 +1,64 @@
+---
+- name: Upgrade all packages (full system upgrade)
+  pacman:
+    update_cache: true
+    upgrade: true
+
+- name: Install common packages on Arch Linux
+  pacman:
+    name:
+      - qemu-guest-agent
+      - xterm
+      - vi
+      - tree
+      - which
+      - git
+      - apache
+      - iputils
+      - fail2ban
+      - neofetch
+    state: present
+    update_cache: false
+
+- name: Ensure the English locale exists
+  community.general.locale_gen:
+    name: en_US.UTF-8
+    state: present
+
+- name: Set the English locale as default
+  lineinfile:
+    path: /etc/locale.conf
+    regexp: '^LANG='
+    line: 'LANG=en_US.UTF-8'
+    create: yes
+
+- name: Check if pacman cache has files
+  find:
+    paths: /var/cache/pacman/pkg
+    file_type: file
+  register: pacman_cache_files
+
+- name: Clean pacman cache if files exist
+  command: >-
+    pacman -Scc --noconfirm
+  when: pacman_cache_files.matched > 0
+  changed_when: false
+
+- name: Remove orphaned packages
+  command: >-
+    pacman -Qdtq
+  register: orphaned_packages
+  changed_when: false
+  failed_when: false
+
+- name: Remove orphaned packages (if any)
+  command: >-
+    pacman -Rns --noconfirm {{ orphaned_packages.stdout_lines | join(' ') }}
+  when: orphaned_packages.stdout_lines | length > 0
+
+- name: Patch geerlingguy.security role from local
+  delegate_to: localhost
+  become: false
+  copy:
+    src: geerlingguy.security/
+    dest: "{{ playbook_dir }}/../roles/galaxy/geerlingguy.security/"

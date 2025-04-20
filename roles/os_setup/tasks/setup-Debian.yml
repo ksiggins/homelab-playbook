@@ -1,9 +1,19 @@
 ---
-- name: Ensure the system is up-to-date, clean cache, and remove unused packages
+- name: Update package cache and upgrade all packages
   apt:
     update_cache: yes
     upgrade: dist
+    force_apt_get: yes
+  register: apt_upgrade
+  changed_when: apt_upgrade.changed
+
+- name: Autoremove unused packages
+  apt:
     autoremove: yes
+    force_apt_get: yes
+
+- name: Autoclean cached packages
+  apt:
     autoclean: yes
     force_apt_get: yes
 
@@ -23,6 +33,9 @@
       - iputils-ping
       - openssh-server
       - neofetch
+    state: present
+    update_cache: false
+    force_apt_get: yes
 
 - name: Check if reboot is required
   stat:
@@ -31,6 +44,8 @@
 
 - name: Reboot if required
   reboot:
-  when:
-    reboot_required_file.stat.exists == true and
-    ansible_default_ipv4.address != hostvars.localhost.ansible_default_ipv4.address
+    msg: "Reboot triggered due to package update"
+    connect_timeout: 5
+    reboot_timeout: 600
+    test_command: whoami
+  when: reboot_required_file.stat.exists

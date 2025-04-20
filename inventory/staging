@@ -1,0 +1,7 @@
+[servers]
+arch@orb ansible_user=root@arch
+centos9@orb ansible_user=root@centos9
+debian11@orb ansible_user=root@debian11
+debian12@orb ansible_user=root@debian12
+rocky9@orb ansible_user=root@rocky9
+ubuntu24@orb ansible_user=root@ubuntu24
