@@ -7,10 +7,14 @@ repos:
       - id: check-merge-conflict
       - id: end-of-file-fixer
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: check-yaml
       - id: check-json
       - id: check-case-conflict
-      - id: check-executables-have-shebang
+      - id: requirements-txt-fixer
+      - id: sort-simple-yaml
+      - id: detect-private-key
+      - id: mixed-line-ending
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.37.0
@@ -18,6 +22,6 @@ repos:
       - id: yamllint
 
   - repo: https://github.com/ansible/ansible-lint
-    rev: v24.2.1
+    rev: v25.2.1
     hooks:
       - id: ansible-lint
