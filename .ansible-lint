@@ -1,7 +1,10 @@
 profile: production
 exclude_paths:
-  - roles/*/files/
-  - roles/*/templates/
+  - .ansible
+  - roles/galaxy
+  - collections
+  - roles/*/files
+  - roles/*/templates
 warn_list:
   - experimental  # Show experimental rules as warnings
   - formatting
