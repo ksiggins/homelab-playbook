@@ -16,6 +16,8 @@
       - apache
       - iputils
       - fail2ban
+      - python
+      - python-pip
       - neofetch
     state: present
     update_cache: false

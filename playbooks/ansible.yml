@@ -1,0 +1,6 @@
+---
+- name: Install Ansible
+  hosts: ansible
+
+  roles:
+    - ansible

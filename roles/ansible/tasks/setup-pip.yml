@@ -1,9 +1,11 @@
+---
 - name: Copy requirements.txt to remote
-  copy:
-    src: "{{ playbook_dir }}/files/requirements.txt"
+  ansible.builtin.copy:
+    src: files/requirements.txt
     dest: /tmp/requirements.txt
+    mode: '0644'
 
 - name: Install python packages via pip
-  pip:
+  ansible.builtin.pip:
     break_system_packages: true
     requirements: /tmp/requirements.txt

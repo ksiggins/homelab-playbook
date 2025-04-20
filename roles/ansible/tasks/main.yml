@@ -1,0 +1,3 @@
+---
+- name: Run pip setup tasks
+  ansible.builtin.include_tasks: setup-pip.yml
