@@ -4,7 +4,7 @@
     name: '*'
     state: latest
     update_cache: true
-    only_upgrade: true  # Ensures that only installed packages are upgraded, no new packages will be installed
+    update_only: true  # Ensure that only installed packages are upgraded
 
 - name: Remove old kernels (keep 2)
   ansible.builtin.shell: |-
