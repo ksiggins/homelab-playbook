@@ -1,0 +1,15 @@
+profile: production
+exclude_paths:
+  - roles/*/files/
+  - roles/*/templates/
+warn_list:
+  - experimental  # Show experimental rules as warnings
+  - formatting
+  - unnamed-task
+  - no-changed-when
+  - command-instead-of-shell
+
+skip_list:
+  - yaml[line-length]     # Ignore long line warnings
+  - name[casing]          # Skip name casing check
+  - var-naming            # Avoid variable naming nitpicks
