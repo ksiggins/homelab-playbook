@@ -1,4 +1,8 @@
 [servers]
+p1
 p2
 p3
 p4
+
+[pihole]
+p1
