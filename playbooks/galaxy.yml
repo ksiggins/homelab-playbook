@@ -1,9 +1,0 @@
----
-- name: Install Ansible collections and roles
-  hosts: localhost
-  connection: local
-
-  tasks:
-    - name: Force re-install of Ansible
-      command: "ansible-galaxy install --force -r {{ playbook_dir }}/requirements.yml -p ../roles/galaxy"
-      ignore_errors: true

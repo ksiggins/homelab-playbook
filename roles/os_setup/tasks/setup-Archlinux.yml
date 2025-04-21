@@ -59,11 +59,3 @@
     pacman -Rns --noconfirm {{ orphaned_packages.stdout_lines | join(' ') }}
   when: orphaned_packages.stdout_lines | length > 0
   changed_when: orphaned_packages.stdout_lines | length > 0
-
-- name: Patch geerlingguy.security role from local
-  delegate_to: localhost
-  become: false
-  ansible.builtin.copy:
-    src: geerlingguy.security/
-    dest: "{{ playbook_dir }}/../roles/galaxy/geerlingguy.security/"
-    mode: '0755'

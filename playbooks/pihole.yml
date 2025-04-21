@@ -3,17 +3,10 @@
   hosts: pihole
   become: true
 
-  pre_tasks:
-    - name: Patch unbound role from local
-      ansible.builtin.import_tasks: ../roles/update_pihole/tasks/patch-unbound.yml
-      tags: install
-
   roles:
     - role: r_pufky.pihole
       tags: [install]
-
     - role: l3d.unbound
       tags: [install]
-
     - role: update_pihole
       tags: [update]

@@ -1,8 +1,0 @@
----
-- name: Patch l3d.unbound role from local
-  delegate_to: localhost
-  become: false
-  ansible.builtin.copy:
-    src: l3d.unbound/
-    dest: "{{ playbook_dir }}/../roles/galaxy/l3d.unbound/"
-    mode: '0755'

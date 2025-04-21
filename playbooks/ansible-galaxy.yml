@@ -1,0 +1,7 @@
+---
+- name: Install Ansible Galaxy dependencies
+  hosts: localhost
+  connection: local
+
+  roles:
+    - role: ansible_galaxy
