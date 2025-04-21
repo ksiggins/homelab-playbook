@@ -1,7 +1,0 @@
----
-- hosts: pihole
-  become: true
-
-  tasks:
-    - import_tasks: tasks/update-dns.yml
-    - import_tasks: tasks/update-pihole.yml
