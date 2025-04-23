@@ -2,14 +2,14 @@
 - name: Run ansible-galaxy command manually to install roles
   ansible.builtin.command: >-
     ansible-galaxy install
-    -r {{ playbook_dir }}/../requirements.yml
+    -r {{ requirements_file }}
   register: galaxy_run_result
   ignore_errors: true  # Allow task to continue even if command fails
 
 - name: Force re-install roles if version mismatch warning is found
   ansible.builtin.command: >-
     ansible-galaxy install
-    -r {{ playbook_dir }}/../requirements.yml
+    -r {{ requirements_file }}
     --force
   register: galaxy_run_result
   when: "'use --force' in galaxy_run_result.stderr"
