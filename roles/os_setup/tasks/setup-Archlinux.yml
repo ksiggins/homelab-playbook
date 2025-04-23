@@ -18,6 +18,7 @@
       - fail2ban
       - python
       - python-pip
+      - python-virtualenv
       - neofetch
     state: present
     update_cache: false

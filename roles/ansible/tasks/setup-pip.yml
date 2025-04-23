@@ -1,11 +1,18 @@
 ---
+- name: Create venv in user's home directory
+  ansible.builtin.command: >-
+    python3 -m venv {{ ansible_env.HOME }}/venv
+  args:
+    creates: "{{ ansible_env.HOME }}/venv"
+
 - name: Copy requirements.txt to remote
   ansible.builtin.copy:
     src: files/requirements.txt
     dest: /tmp/requirements.txt
     mode: '0644'
 
-- name: Install python packages via pip
+- name: Install python packages into venv
   ansible.builtin.pip:
-    break_system_packages: true
     requirements: /tmp/requirements.txt
+    virtualenv: "{{ ansible_env.HOME }}/venv"
+    virtualenv_command: python3 -m venv
