@@ -1,15 +1,51 @@
 ---
-- name: Run ansible-galaxy command manually to install roles
-  ansible.builtin.command: >-
-    ansible-galaxy install
-    -r {{ requirements_file }}
-  register: galaxy_run_result
-  ignore_errors: true  # Allow task to continue even if command fails
+- name: Define MD5 file name
+  ansible.builtin.set_fact:
+    md5_file: "{{ requirements_file }}.md5"
 
-- name: Force re-install roles if version mismatch warning is found
-  ansible.builtin.command: >-
-    ansible-galaxy install
-    -r {{ requirements_file }}
-    --force
-  register: galaxy_run_result
-  when: "'use --force' in galaxy_run_result.stderr"
+- name: Check if requirements file exists
+  ansible.builtin.stat:
+    path: "{{ requirements_file }}"
+  register: requirements_file_stat
+
+- name: Skip if requirements file does not exist
+  ansible.builtin.meta: end_host
+  when: not requirements_file_stat.stat.exists
+
+- name: Get checksum of requirements file
+  ansible.builtin.stat:
+    path: "{{ requirements_file }}"
+    checksum_algorithm: md5
+  register: requirements_checksum_result
+
+- name: Define new MD5 hash
+  ansible.builtin.set_fact:
+    new_md5: "{{ requirements_checksum_result.stat.checksum }}"
+
+- name: Check if hash file exists
+  ansible.builtin.stat:
+    path: "{{ md5_file }}"
+  register: hash_file
+
+- name: Read old MD5 hash if exists
+  ansible.builtin.set_fact:
+    old_md5: "{{ lookup('ansible.builtin.file', md5_file) }}"
+  when: hash_file.stat.exists
+
+- name: Determine if requirements file has changed
+  ansible.builtin.set_fact:
+    changed: "{{ (old_md5 != new_md5) if hash_file.stat.exists else true }}"
+
+- name: Install Galaxy Requirements
+  community.general.ansible_galaxy_install:
+    type: role
+    requirements_file: "{{ requirements_file }}"
+    force: true
+  when: changed
+
+- name: Write new checksum to file
+  ansible.builtin.copy:
+    content: "{{ new_md5 }}"
+    dest: "{{ md5_file }}"
+    mode: '0644'
+  when: changed
