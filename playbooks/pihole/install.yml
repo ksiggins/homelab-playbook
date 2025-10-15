@@ -1,0 +1,9 @@
+---
+- name: Install Pi-hole
+  hosts: pihole
+  become: true
+
+  roles:
+    - r_pufky.pihole
+    - l3d.unbound
+    - update_pihole

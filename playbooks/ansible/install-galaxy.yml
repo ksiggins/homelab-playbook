@@ -4,4 +4,4 @@
   connection: local
 
   roles:
-    - role: ansible_galaxy
+    - ansible_galaxy
