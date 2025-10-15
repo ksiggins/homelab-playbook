@@ -1,13 +1,13 @@
 ---
 roles:
   - name: robertdebock.bootstrap
-    version: 7.1.1
+    version: 7.1.5
   - name: geerlingguy.security
     version: 3.0.0
   - name: geerlingguy.docker
-    version: 7.4.7
+    version: 7.6.0
   - name: xanmanning.k3s
-    version: v3.4.4
+    version: v3.6.1
   - name: r_pufky.pihole
     version: 3.0.4
   - name: l3d.unbound
