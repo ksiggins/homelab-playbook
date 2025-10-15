@@ -65,11 +65,6 @@
       - iputils
       - openssh-server
 
-- name: Install from EPEL enabled repo
-  ansible.builtin.dnf:
-    name: neofetch
-    enablerepo: epel
-
 - name: Check if reboot is required
   ansible.builtin.command: >-
     needs-restarting -r

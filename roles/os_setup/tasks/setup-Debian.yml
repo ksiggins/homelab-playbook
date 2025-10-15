@@ -33,7 +33,6 @@
       - apache2-utils
       - iputils-ping
       - openssh-server
-      - neofetch
     state: present
     update_cache: false
     force_apt_get: true
