@@ -1,0 +1,17 @@
+---
+- name: Ensure default state
+  ansible.builtin.set_fact:
+    argocd_state: "{{ argocd_state | default('present') }}"
+  changed_when: false
+
+- name: Install Argo CD manifests
+  ansible.builtin.import_tasks: install.yml
+  when: argocd_state == 'present'
+
+- name: Patch Argo CD service and admin credentials
+  ansible.builtin.import_tasks: patch.yml
+  when: argocd_state == 'present'
+
+- name: Uninstall Argo CD
+  ansible.builtin.import_tasks: uninstall.yml
+  when: argocd_state == 'absent'

@@ -1,0 +1,23 @@
+---
+- block:
+    - name: Ensure argocd namespace exists
+      ansible.builtin.command: >-
+        kubectl create namespace argocd
+      register: create_ns
+      failed_when: create_ns.rc != 0 and 'AlreadyExists' not in create_ns.stderr
+      changed_when: "'AlreadyExists' not in create_ns.stderr"
+
+    - name: Deploy Argo CD manifest
+      ansible.builtin.command: >-
+        kubectl apply -n argocd
+        -f https://raw.githubusercontent.com/argoproj/argo-cd/refs/tags/{{ argocd_version }}/manifests/install.yaml
+      changed_when: false
+
+    - name: Wait for Argo CD pods to become ready
+      ansible.builtin.command: >-
+        kubectl wait --for=condition=ready pods --all -n argocd --timeout=300s
+      changed_when: false
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  run_once: true

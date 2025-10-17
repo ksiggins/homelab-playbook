@@ -1,0 +1,6 @@
+---
+- hosts: k3s_cluster
+  roles:
+    - role: geerlingguy.docker
+      become: true
+    - role: xanmanning.k3s

@@ -1,0 +1,29 @@
+# Pre-generated bcrypt hash for argocd admin password
+argocd_bcrypt_password: $2a$10$A1T/znJnqZx7H2YCkJ4.9emQGF7v1LRb8IgJuu3t7qheO17cHZt9q
+
+# escalate user privileges for tasks that need root permissions
+k3s_become: true
+
+# Enable etcd embedded datastore for control plane HA
+k3s_etcd_datastore: true
+
+# control plane configuration with HA control plane
+k3s_server:
+  node-ip: "{{ ansible_host }}"
+  tls-san: "{{ k3s_registration_address | default(omit) }}"
+  disable:
+    - servicelb
+    - traefik
+
+# install kube-vip as a lb for control plane nodes
+# install argocd as a gitops continuous delivery tool for kubernetes
+
+k3s_server_manifests_templates:
+  - "{{ playbook_dir }}/../../roles/kube_vip/templates/10-configmap.yaml"
+  - "{{ playbook_dir }}/../../roles/kube_vip/templates/20-daemonset.yaml"
+
+k3s_server_manifests_urls:
+  - url: "https://kube-vip.io/manifests/rbac.yaml"
+    filename: 30-kube-vip-rbac.yaml
+  - url: "https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/{{ kube_vip_cloud_controller_version }}/manifest/kube-vip-cloud-controller.yaml"
+    filename: 40-kube-vip-cloud-controller.yaml

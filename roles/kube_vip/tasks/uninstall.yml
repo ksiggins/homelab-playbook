@@ -1,0 +1,16 @@
+---
+- name: Ensure stale VIP address is removed from interfaces
+  become: true
+  ansible.builtin.command: >-
+    bash -c "ip addr show | grep -q '{{ k3s_registration_address }}'
+    && ip addr del {{ k3s_registration_address }}/32 dev eth0
+    || true"
+  ignore_errors: true
+  changed_when: false
+
+- name: Flush stale ARP and routing entries
+  become: true
+  ansible.builtin.command: >-
+    bash -c "ip neigh flush all || true"
+  ignore_errors: true
+  changed_when: false

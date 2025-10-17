@@ -1,9 +1,0 @@
----
-- name: Add kubectl alias and autocomplete to bashrc
-  blockinfile:
-    path: "{{ ansible_user_dir }}/.bashrc"
-    block: |
-      # enable kubectl alias and autocomplete
-      source <(kubectl completion bash)
-      alias k=kubectl
-      complete -o default -F __start_kubectl k

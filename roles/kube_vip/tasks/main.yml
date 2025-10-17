@@ -1,0 +1,4 @@
+---
+- name: Run kube-vip uninstall tasks
+  ansible.builtin.include_tasks: uninstall.yml
+  when: kube_vip_state == "absent"

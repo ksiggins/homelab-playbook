@@ -1,0 +1,42 @@
+---
+- block:
+    - name: Check to see if argocd-server is running
+      ansible.builtin.command: >-
+        kubectl get service argocd-server -n argocd
+        -o jsonpath="{.spec.type}"
+      register: argocd_spec_type
+      changed_when: false
+      failed_when: argocd_spec_type.rc > 1
+
+    - name: Change the argocd-server to a LoadBalancer type
+      ansible.builtin.command: >-
+        kubectl patch service argocd-server -n argocd
+        -p '{"spec": { "type": "LoadBalancer" }}'
+      when: argocd_spec_type.stdout != "LoadBalancer"
+
+    - name: Check if argocd-initial-admin-secret exists
+      ansible.builtin.command: >
+        kubectl get secret argocd-initial-admin-secret -n argocd
+      register: argocd_initial_secret
+      failed_when: false
+      changed_when: false
+
+    - name: Update the argocd-secret dashboard password
+      ansible.builtin.command: >-
+        kubectl patch secret argocd-secret -n argocd
+        -p '{"stringData": {
+          "admin.password": "{{ argocd_bcrypt_password }}",
+          "admin.passwordMtime": "$(date +%FT%T%Z)"
+        }}'
+      when: argocd_initial_secret.rc == 0
+      changed_when: true
+
+    - name: Delete argocd-initial-admin-secret if present
+      ansible.builtin.command: >
+        kubectl delete secret argocd-initial-admin-secret -n argocd
+      when: argocd_initial_secret.rc == 0
+      changed_when: true
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  run_once: true
