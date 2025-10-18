@@ -4,3 +4,7 @@
     - role: geerlingguy.docker
       become: true
     - role: xanmanning.k3s
+
+- hosts: ansible
+  roles:
+    - role: kubectl

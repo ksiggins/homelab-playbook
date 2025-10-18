@@ -24,7 +24,7 @@ p1
 k3s_server
 
 # specify kube-vip virtual ip to access the control plane
-# denote external ip address range for services of type load balancer
+# specify argocd external ip address range (one)
 [k3s_cluster:vars]
 k3s_registration_address=192.168.90.98
-external_ip_range=192.168.90.96-192.168.90.96
+argocd_external_ip=192.168.90.99/32

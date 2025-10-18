@@ -4,4 +4,4 @@ metadata:
   name: kubevip
   namespace: kube-system
 data:
-  range-global: {{ external_ip_range }}
+  cidr-argocd: {{ argocd_external_ip }}

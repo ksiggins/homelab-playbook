@@ -7,15 +7,25 @@
       failed_when: create_ns.rc != 0 and 'AlreadyExists' not in create_ns.stderr
       changed_when: "'AlreadyExists' not in create_ns.stderr"
 
-    - name: Deploy Argo CD manifest
+    - name: Deploy ArgoCD manifest
       ansible.builtin.command: >-
         kubectl apply -n argocd
         -f https://raw.githubusercontent.com/argoproj/argo-cd/refs/tags/{{ argocd_version }}/manifests/install.yaml
       changed_when: false
 
-    - name: Wait for Argo CD pods to become ready
+    - name: Wait for ArgoCD namespace to have any pods
       ansible.builtin.command: >-
+        kubectl get pods -n argocd --no-headers
+      register: argocd_pods_check
+      retries: 30
+      delay: 5
+      until: argocd_pods_check.rc == 0 and (argocd_pods_check.stdout | length) > 0
+      changed_when: false
+
+    - name: Wait for ArgoCD pods to become ready
+      ansible.builtin.command: >
         kubectl wait --for=condition=ready pods --all -n argocd --timeout=300s
+      register: argocd_wait
       changed_when: false
 
   environment:
