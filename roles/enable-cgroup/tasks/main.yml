@@ -1,0 +1,8 @@
+---
+- name: Install cgroup kernel parameters
+  ansible.builtin.import_tasks: install.yml
+  when: cgroup_state == 'present'
+
+- name: Uninstall cgroup kernel parameters
+  ansible.builtin.import_tasks: uninstall.yml
+  when: cgroup_state == 'absent'
