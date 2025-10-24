@@ -12,6 +12,3 @@
     - role: kube_vip
       vars:
         kube_vip_state: absent
-    - role: enable-cgroup
-      vars:
-        cgroup_state: absent
