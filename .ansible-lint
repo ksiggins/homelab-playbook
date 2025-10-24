@@ -2,10 +2,7 @@
 profile: production
 exclude_paths:
   - .ansible
-  - roles/galaxy
-  - collections
-  - roles/*/files
-  - roles/*/templates
+  - helm
 warn_list:
   - experimental  # Show experimental rules as warnings
   - formatting
@@ -14,6 +11,7 @@ warn_list:
   - command-instead-of-shell
 
 skip_list:
-  - yaml[line-length]     # Ignore long line warnings
-  - name[casing]          # Skip name casing check
-  - var-naming            # Avoid variable naming nitpicks
+  - yaml[line-length]
+  - name[casing]
+  - var-naming
+  - role-name

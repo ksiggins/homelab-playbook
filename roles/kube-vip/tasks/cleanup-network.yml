@@ -1,26 +1,23 @@
 ---
 - name: Ensure stale VIP address is removed from interfaces
-  become: true
   ansible.builtin.shell: |-
+    set -o pipefail
     ip -o -4 addr show eth0 | awk '/{{ k3s_registration_address }}/ {print $4}' | while read cidr; do
       ip addr del "$cidr" dev eth0 || true
     done
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Flush stale ARP and routing entries
-  become: true
   ansible.builtin.shell: |-
     ip neigh flush all || true
     ip route flush cache || true
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Reset loopback interface to base state
-  become: true
   ansible.builtin.shell: |-
     ip addr flush dev lo
     ip addr add 127.0.0.1/8 dev lo
-  ignore_errors: true
+  failed_when: false
   changed_when: false
-

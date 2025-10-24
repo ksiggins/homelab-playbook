@@ -1,5 +1,9 @@
 ---
-- block:
+- name: Install and verify ArgoCD deployment
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  run_once: true
+  block:
     - name: Ensure argocd namespace exists
       ansible.builtin.command: >-
         kubectl create namespace argocd
@@ -23,11 +27,7 @@
       changed_when: false
 
     - name: Wait for ArgoCD pods to become ready
-      ansible.builtin.command: >
+      ansible.builtin.command: >-
         kubectl wait --for=condition=ready pods --all -n argocd --timeout=300s
       register: argocd_wait
       changed_when: false
-
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-  run_once: true

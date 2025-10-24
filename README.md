@@ -74,4 +74,3 @@ Including `ansible-args` enables more flexible and powerful management of your i
 ## Contribution
 
 Contributions are welcome. Feel free to add new features, improve existing ones, or report issues.
-

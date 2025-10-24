@@ -1,3 +1,4 @@
+---
 # use unbound as a secure open-source recursive DNS server
 pihole_pihole_dns_1: 127.0.0.1#5335
 

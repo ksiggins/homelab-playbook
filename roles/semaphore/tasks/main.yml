@@ -1,6 +1,6 @@
 ---
 - name: Ensure compose directory exists
-  file:
+  ansible.builtin.file:
     path: "{{ ansible_user_dir }}/compose/{{ role_name }}"
     state: directory
     mode: '0755'

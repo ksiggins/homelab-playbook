@@ -1,9 +1,10 @@
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   labels:
     app.kubernetes.io/name: kube-vip-ds
-    app.kubernetes.io/version: {{ kube_vip_version }}
+    app.kubernetes.io/version: "{{ kube_vip_version }}"
   name: kube-vip-ds
   namespace: kube-system
 spec:
@@ -14,74 +15,74 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: kube-vip-ds
-        app.kubernetes.io/version: {{ kube_vip_version }}
+        app.kubernetes.io/version: "{{ kube_vip_version }}"
     spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-role.kubernetes.io/master
-                operator: Exists
-            - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: Exists
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/master
+                    operator: Exists
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
       containers:
-      - args:
-        - manager
-        env:
-        - name: vip_arp
-          value: "true"
-        - name: port
-          value: "6443"
-        - name: vip_nodename
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        - name: vip_interface
-          value: eth0
-        - name: vip_subnet
-          value: "32"
-        - name: dns_mode
-          value: first
-        - name: cp_enable
-          value: "true"
-        - name: cp_namespace
-          value: kube-system
-        - name: svc_enable
-          value: "true"
-        - name: svc_leasename
-          value: plndr-svcs-lock
-        - name: vip_leaderelection
-          value: "true"
-        - name: vip_leasename
-          value: plndr-cp-lock
-        - name: vip_leaseduration
-          value: "15"
-        - name: vip_renewdeadline
-          value: "10"
-        - name: vip_retryperiod
-          value: "2"
-        - name: address
-          value: {{ k3s_registration_address }}
-        - name: prometheus_server
-          value: :2112
-        image: ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}
-        imagePullPolicy: IfNotPresent
-        name: kube-vip
-        resources: {}
-        securityContext:
-          capabilities:
-            add:
-            - NET_ADMIN
-            - NET_RAW
-            drop:
-            - ALL
+        - name: kube-vip
+          image: "ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}"
+          imagePullPolicy: IfNotPresent
+          args:
+            - manager
+          env:
+            - name: vip_arp
+              value: "true"
+            - name: port
+              value: "6443"
+            - name: vip_nodename
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: vip_interface
+              value: eth0
+            - name: vip_subnet
+              value: "32"
+            - name: dns_mode
+              value: first
+            - name: cp_enable
+              value: "true"
+            - name: cp_namespace
+              value: kube-system
+            - name: svc_enable
+              value: "true"
+            - name: svc_leasename
+              value: plndr-svcs-lock
+            - name: vip_leaderelection
+              value: "true"
+            - name: vip_leasename
+              value: plndr-cp-lock
+            - name: vip_leaseduration
+              value: "15"
+            - name: vip_renewdeadline
+              value: "10"
+            - name: vip_retryperiod
+              value: "2"
+            - name: address
+              value: "{{ k3s_registration_address }}"
+            - name: prometheus_server
+              value: ":2112"
+          resources: {}
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+              drop:
+                - ALL
       hostNetwork: true
       serviceAccountName: kube-vip
       tolerations:
-      - effect: NoSchedule
-        operator: Exists
-      - effect: NoExecute
-        operator: Exists
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
   updateStrategy: {}
