@@ -1,6 +1,5 @@
 ---
 - name: Install Semaphore UI
   hosts: semaphore
-
   roles:
     - semaphore

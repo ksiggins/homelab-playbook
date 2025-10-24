@@ -2,6 +2,5 @@
 - name: Update Pi-hole
   hosts: pihole
   become: true
-
   roles:
-    - update_pihole
+    - update-pihole
