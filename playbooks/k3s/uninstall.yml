@@ -9,6 +9,6 @@
       vars:
         docker_packages_state: absent
         docker_service_manage: false
-    - role: kube_vip
+    - role: kube-vip
       vars:
         kube_vip_state: absent
