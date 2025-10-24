@@ -1,4 +1,4 @@
 ---
 - name: Run kube-vip uninstall tasks
-  ansible.builtin.include_tasks: uninstall.yml
+  ansible.builtin.include_tasks: cleanup-network.yml
   when: kube_vip_state == "absent"
