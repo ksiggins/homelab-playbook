@@ -1,15 +1,15 @@
 ---
 - name: Prepare systems for Ansible management
   hosts: servers
+  become: true
   gather_facts: false
-
   roles:
     - robertdebock.bootstrap
 
 - name: Configure OS and apply baseline hardening
   hosts: servers
+  become: true
   gather_facts: true
-
   roles:
-    - os_setup
+    - system-maintenance
     - geerlingguy.security
