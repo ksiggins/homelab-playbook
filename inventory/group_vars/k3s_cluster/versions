@@ -1,5 +1,4 @@
 k3s_release_version: v1.34.1+k3s1
 kube_vip_version: v1.0.1
 kube_vip_cloud_controller_version: v0.0.12
-kubectl_version: v1.34.1
 argocd_version: v3.1.8
