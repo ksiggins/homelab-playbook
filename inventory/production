@@ -24,7 +24,9 @@ p1
 k3s_server
 
 # specify kube-vip virtual ip to access the control plane
-# specify argocd external ip address range (one)
+# specify argocd external ip address
+# specify traefik external ip address
 [k3s_cluster:vars]
 k3s_registration_address=192.168.90.98
 argocd_external_ip=192.168.90.99/32
+traefik_external_ip=192.168.90.100/32
