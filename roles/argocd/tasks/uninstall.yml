@@ -1,16 +1,50 @@
 ---
-- name: Uninstall ArgoCD and clean up resources if present
+- name: Uninstall ArgoCD and all managed resources
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   run_once: true
   block:
+    - name: Disable ArgoCD automation before teardown
+      ansible.builtin.shell: |-
+        kubectl -n {{ argocd_namespace }} scale deployment argocd-application-controller --replicas=0 || true
+        kubectl -n {{ argocd_namespace }} scale deployment argocd-repo-server --replicas=0 || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Check if ArgoCD namespace exists
       ansible.builtin.command: kubectl get ns {{ argocd_namespace }}
       register: argocd_ns
       failed_when: false
       changed_when: false
 
-    - name: Uninstall ArgoCD resources if namespace exists
+    - name: Delete ArgoCD Applications recursively (children first, non-blocking)
+      ansible.builtin.shell: |-
+        set -o pipefail
+        for app in $(kubectl get applications.argoproj.io -n {{ argocd_namespace }} --no-headers 2>/dev/null
+        | awk '{print $1}' | grep -v '^root$'); do
+          kubectl delete application "$app" -n {{ argocd_namespace }} --cascade=true
+          --ignore-not-found --timeout=5s || true
+        done
+        kubectl delete application root -n {{ argocd_namespace }} --cascade=true --ignore-not-found --timeout=5s || true
+      args:
+        executable: /bin/bash
+      when: argocd_ns.rc == 0
+      changed_when: false
+
+    - name: Force remove stuck ArgoCD application finalizers
+      ansible.builtin.shell: |-
+        set -o pipefail
+        for app in $(kubectl get applications.argoproj.io -n {{ argocd_namespace }} --no-headers 2>/dev/null
+        | awk '{print $1}'); do
+          kubectl patch app "$app" -n {{ argocd_namespace }} -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+        done
+      args:
+        executable: /bin/bash
+      when: argocd_ns.rc == 0
+      changed_when: false
+
+    - name: Delete all ArgoCD resources in namespace
       ansible.builtin.command: >-
         kubectl delete all,cm,secret,sa,role,rolebinding,svc,deploy,sts,rs,pod --all
         -n {{ argocd_namespace }} --ignore-not-found
@@ -29,4 +63,12 @@
 
     - name: Delete argocd namespace if present
       ansible.builtin.command: kubectl delete ns {{ argocd_namespace }} --ignore-not-found
+      changed_when: false
+
+    - name: Delete leftover ArgoCD ClusterRoles, ClusterRoleBindings, and Webhooks
+      ansible.builtin.shell: |-
+        kubectl delete clusterrole,clusterrolebinding,validatingwebhookconfiguration,mutatingwebhookconfiguration \
+          -l app.kubernetes.io/part-of=argocd --ignore-not-found
+      args:
+        executable: /bin/bash
       changed_when: false
