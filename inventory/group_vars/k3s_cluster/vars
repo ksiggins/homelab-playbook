@@ -15,13 +15,10 @@ k3s_server:
     - servicelb
     - traefik
 
-# install kube-vip as a lb for control plane nodes
-# install kube-vip-cloud-controller for argocd namespace lb only
+# install kube-vip for HA control plane only
+# announces the API server VIP, not used for LoadBalancer services
 k3s_server_manifests_templates:
-  - "{{ playbook_dir }}/../../roles/kube-vip/templates/20-kube-vip-cloud-config.yaml"
   - "{{ playbook_dir }}/../../roles/kube-vip/templates/30-kube-vip-daemonset.yaml"
 k3s_server_manifests_urls:
   - url: "https://kube-vip.io/manifests/rbac.yaml"
     filename: 20-kube-vip-rbac.yaml
-  - url: "https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/{{ kube_vip_cloud_controller_version }}/manifest/kube-vip-cloud-controller.yaml"
-    filename: 30-kube-vip-cloud-controller.yaml

@@ -17,6 +17,16 @@ spec:
         app.kubernetes.io/name: kube-vip-ds
         app.kubernetes.io/version: "{{ kube_vip_version }}"
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/master
+                    operator: Exists
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
       containers:
         - args:
             - manager
@@ -39,12 +49,6 @@ spec:
               value: "true"
             - name: cp_namespace
               value: kube-system
-            - name: svc_enable
-              value: "true"
-            - name: svc_leasename
-              value: plndr-svcs-lock
-            - name: svc_election
-              value: "true"
             - name: vip_leaderelection
               value: "true"
             - name: vip_leasename
@@ -55,12 +59,6 @@ spec:
               value: "10"
             - name: vip_retryperiod
               value: "2"
-            - name: lb_enable
-              value: "true"
-            - name: lb_port
-              value: "6443"
-            - name: lb_fwdmethod
-              value: local
             - name: address
               value: "{{ k3s_registration_address }}"
             - name: prometheus_server
@@ -78,4 +76,9 @@ spec:
                 - ALL
       hostNetwork: true
       serviceAccountName: kube-vip
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
   updateStrategy: {}

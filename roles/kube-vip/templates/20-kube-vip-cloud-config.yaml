@@ -1,9 +1,0 @@
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubevip
-  namespace: kube-system
-data:
-  cidr-argocd: "{{ argocd_external_ip }}"
-  cidr-traefik-v2: "{{ traefik_external_ip }}"
