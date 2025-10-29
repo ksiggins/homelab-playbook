@@ -1,0 +1,16 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ metallb_pool_name }}
+  namespace: {{ metallb_namespace }}
+  labels:
+    app.kubernetes.io/name: metallb
+    app.kubernetes.io/component: ipaddresspool
+    app.kubernetes.io/part-of: homelab-playbook
+    app.kubernetes.io/managed-by: ansible
+spec:
+  addresses:
+{% for range in metallb_addresses.split(',') %}
+    - "{{ range.strip() }}"
+{% endfor %}

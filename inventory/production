@@ -23,7 +23,8 @@ p1
 [k3s_cluster:children]
 k3s_server
 
-# specify kube-vip virtual ip to access the control plane
-# specify argocd external ip address
+# kube-vip virtual IP for the control-plane endpoint
+# metallb address pool for LoadBalancer services
 [k3s_cluster:vars]
 k3s_registration_address=192.168.90.98
+metallb_addresses=192.168.90.100-192.168.90.110
