@@ -4,15 +4,16 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   run_once: true
   block:
-    - name: Check if argocd namespace exists
-      ansible.builtin.command: kubectl get ns argocd
+    - name: Check if ArgoCD namespace exists
+      ansible.builtin.command: kubectl get ns {{ argocd_namespace }}
       register: argocd_ns
       failed_when: false
       changed_when: false
 
     - name: Uninstall ArgoCD resources if namespace exists
       ansible.builtin.command: >-
-        kubectl delete all,cm,secret,sa,role,rolebinding,svc,deploy,sts,rs,pod --all -n argocd --ignore-not-found
+        kubectl delete all,cm,secret,sa,role,rolebinding,svc,deploy,sts,rs,pod --all
+        -n {{ argocd_namespace }} --ignore-not-found
       when: argocd_ns.rc == 0
       changed_when: false
 
@@ -27,5 +28,5 @@
       changed_when: false
 
     - name: Delete argocd namespace if present
-      ansible.builtin.command: kubectl delete ns argocd --ignore-not-found
+      ansible.builtin.command: kubectl delete ns {{ argocd_namespace }} --ignore-not-found
       changed_when: false
