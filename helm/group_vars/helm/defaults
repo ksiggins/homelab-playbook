@@ -1,20 +1,4 @@
-# timeout to wait for metallb services to come up
-metallb_available_timeout: 120s
-
-# configure metallb to operate in either layer 2 (ARP/NDP) or layer 3 (BGP) mode
-metallb_mode: layer2
-
-# metallb ip range for load balancer
-metallb_ip_range:
-  - 192.168.100.0/24
-
-# layer3 (BGP) options
-metallb_bgp_my_asn: 64513
-metallb_bgp_peer_asn: 64512
-metallb_bgp_peer_address: 192.168.100.1
-
 # hostnames
-traefik_hostname: traefik.localhost
 rancher_hostname: rancher.localhost
 
 # lets encrypt staging or prod environment
