@@ -1,5 +1,6 @@
 pihole_dns_records:
-  - 192.168.90.101 traefik.lab.supermorphic.com
   - 192.168.90.101 argocd.lab.supermorphic.com
+  - 192.168.90.101 traefik.lab.supermorphic.com
+  - 192.168.90.101 longhorn.lab.supermorphic.com
 
 pihole_dns_cname_records: []
