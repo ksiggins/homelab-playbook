@@ -4,6 +4,6 @@ pihole_dns_records:
   - 192.168.90.101 rancher.local.supermorphic.com
   - 192.168.90.101 prometheus.local.supermorphic.com
   - 192.168.90.101 grafana.local.supermorphic.com
-  - 192.168.90.100 argocd.local.supermorphic.com
+  - 192.168.90.101 argocd.local.supermorphic.com
 
 pihole_dns_cname_records: []
