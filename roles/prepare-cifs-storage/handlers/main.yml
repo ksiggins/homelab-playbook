@@ -1,0 +1,12 @@
+---
+- name: Restart iscsid service
+  ansible.builtin.service:
+    name: iscsid
+    state: restarted
+
+- name: Reboot system
+  ansible.builtin.reboot:
+    msg: "Rebooting to apply CIFS storage dependencies and kernel module changes"
+    connect_timeout: 5
+    reboot_timeout: 600
+    test_command: whoami

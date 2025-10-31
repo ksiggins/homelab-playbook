@@ -4,6 +4,7 @@
   become: true
   roles:
     - role: enable-cgroup
+    - role: prepare-cifs-storage
     - role: geerlingguy.docker
     - role: xanmanning.k3s
 
