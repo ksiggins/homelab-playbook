@@ -1,9 +1,5 @@
 pihole_dns_records:
-  - 192.168.90.101 traefik.local.supermorphic.com
-  - 192.168.90.101 nginx.local.supermorphic.com
-  - 192.168.90.101 rancher.local.supermorphic.com
-  - 192.168.90.101 prometheus.local.supermorphic.com
-  - 192.168.90.101 grafana.local.supermorphic.com
-  - 192.168.90.101 argocd.local.supermorphic.com
+  - 192.168.90.101 traefik.lab.supermorphic.com
+  - 192.168.90.101 argocd.lab.supermorphic.com
 
 pihole_dns_cname_records: []
