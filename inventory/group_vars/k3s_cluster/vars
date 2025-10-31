@@ -14,6 +14,7 @@ k3s_server:
   disable:
     - servicelb
     - traefik
+    - local-storage
 
 # install kube-vip for HA control plane only
 # announces the API server VIP, not used for LoadBalancer services
