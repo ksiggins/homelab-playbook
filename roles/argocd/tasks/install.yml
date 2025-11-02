@@ -17,6 +17,19 @@
         -f https://raw.githubusercontent.com/argoproj/argo-cd/refs/tags/{{ argocd_version }}/manifests/install.yaml
       changed_when: false
 
+    - name: Patch ArgoCD ConfigMap to enable Kustomize Helm support
+      ansible.builtin.shell: |-
+        kubectl -n {{ argocd_namespace }} patch configmap argocd-cm \
+          --type merge \
+          -p '{"data": {"kustomize.buildOptions": "--enable-helm"}}'
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Restart ArgoCD repo-server to pick up config change
+      ansible.builtin.command: kubectl -n {{ argocd_namespace }} rollout restart deploy/argocd-repo-server
+      changed_when: false
+
     - name: Wait for ArgoCD namespace to have any pods
       ansible.builtin.command: >-
         kubectl get pods -n {{ argocd_namespace }} --no-headers
