@@ -72,8 +72,8 @@
 
     - name: Delete leftover ArgoCD ClusterRoles, ClusterRoleBindings, and Webhooks
       ansible.builtin.shell: |-
-        kubectl delete clusterrole,clusterrolebinding,validatingwebhookconfiguration, \
-          mutatingwebhookconfiguration -l app.kubernetes.io/part-of=argocd --ignore-not-found
+        kubectl delete clusterrole,clusterrolebinding,validatingwebhookconfiguration,mutatingwebhookconfiguration \
+        -l app.kubernetes.io/part-of=argocd --ignore-not-found
       args:
         executable: /bin/bash
       changed_when: false
