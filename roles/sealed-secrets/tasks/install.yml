@@ -1,0 +1,118 @@
+---
+- name: Install and verify Sealed Secrets deployment
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  run_once: true
+  block:
+
+    - name: Ensure Sealed Secrets namespace exists
+      ansible.builtin.command: >-
+        kubectl create namespace {{ sealedsecrets_namespace }}
+      register: create_ns
+      failed_when: create_ns.rc != 0 and 'AlreadyExists' not in create_ns.stderr
+      changed_when: "'AlreadyExists' not in create_ns.stderr"
+
+    - name: Download Bitnami Sealed Secrets controller manifest
+      ansible.builtin.get_url:
+        url: "https://github.com/bitnami-labs/sealed-secrets/releases/download/{{ sealed_secrets }}/controller.yaml"
+        dest: /tmp/sealed-secrets-controller.yaml
+        mode: '0600'
+
+    - name: Patch and apply Sealed Secrets controller manifest
+      ansible.builtin.shell: |
+        set -o pipefail
+        sed "s/namespace: kube-system/namespace: {{ sealedsecrets_namespace }}/g" /tmp/sealed-secrets-controller.yaml \
+        | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      register: sealed_apply
+      changed_when: "'created' in sealed_apply.stdout or 'configured' in sealed_apply.stdout"
+
+    - name: Wait for Sealed Secrets controller deployment to be ready
+      ansible.builtin.command: >-
+        kubectl -n {{ sealedsecrets_namespace }}
+        rollout status deployment/sealed-secrets-controller --timeout=300s
+      changed_when: false
+
+    - name: Decrypt Sealed Secrets key from Ansible Vault
+      delegate_to: localhost
+      become: false
+      ansible.builtin.shell: |
+        set -o pipefail
+        ansible-vault view {{ inventory_dir }}/group_vars/k3s_cluster/sealed-secrets-key.yaml.vault \
+        > /tmp/sealed-secrets-key.yaml
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Transfer decrypted Sealed Secrets key to remote node
+      ansible.builtin.copy:
+        src: /tmp/sealed-secrets-key.yaml
+        dest: /tmp/sealed-secrets-key.yaml
+        mode: '0600'
+
+    - name: Get existing Sealed Secrets key secrets
+      ansible.builtin.shell: >
+        kubectl get secrets -n {{ sealedsecrets_namespace }}
+        -l sealedsecrets.bitnami.com/sealed-secrets-key
+        -o jsonpath='{.items[*].metadata.name}'
+      args:
+        executable: /bin/bash
+      register: existing_keys
+      changed_when: false
+
+    - name: Delete any Sealed Secrets keys except the intended one
+      ansible.builtin.shell: |
+        set -o pipefail
+        for key in {{ existing_keys.stdout }}; do
+          if [ "$key" != "sealed-secrets-key" ]; then
+            kubectl delete secret -n {{ sealedsecrets_namespace }} "$key"
+          fi
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Apply Sealed Secrets key Secret on cluster
+      ansible.builtin.command: >-
+        kubectl apply --validate=false -f /tmp/sealed-secrets-key.yaml
+        -n {{ sealedsecrets_namespace }}
+      register: sealed_key_apply
+      changed_when: "'created' in sealed_key_apply.stdout or 'configured' in sealed_key_apply.stdout"
+
+    - name: Restart Sealed Secrets controller to load restored key
+      ansible.builtin.command: >-
+        kubectl delete pod -n {{ sealedsecrets_namespace }} -l name=sealed-secrets-controller
+      changed_when: true
+
+    - name: Verify Sealed Secrets pods are running
+      ansible.builtin.command: >-
+        kubectl get pods -n {{ sealedsecrets_namespace }} --no-headers
+      register: sealed_pods
+      retries: 30
+      delay: 5
+      until: sealed_pods.rc == 0 and (sealed_pods.stdout | length) > 0
+      changed_when: false
+
+    - name: Wait for all Sealed Secrets pods to become Ready
+      ansible.builtin.command: >-
+        kubectl wait --for=condition=ready pods --all
+        -n {{ sealedsecrets_namespace }} --timeout=300s
+      changed_when: false
+
+    - name: Remove temporary Sealed Secrets manifest
+      ansible.builtin.file:
+        path: /tmp/sealed-secrets-controller.yaml
+        state: absent
+
+- name: Remove local decrypted Sealed Secrets key
+  delegate_to: localhost
+  become: false
+  ansible.builtin.file:
+    path: /tmp/sealed-secrets-key.yaml
+    state: absent
+
+- name: Remove remote decrypted Sealed Secrets key
+  ansible.builtin.file:
+    path: /tmp/sealed-secrets-key.yaml
+    state: absent

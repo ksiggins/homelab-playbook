@@ -1,0 +1,42 @@
+---
+- name: Uninstall Sealed Secrets and clean up resources if present
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  run_once: true
+  block:
+
+    - name: Check if Sealed Secrets namespace exists
+      ansible.builtin.command: kubectl get ns {{ sealedsecrets_namespace }}
+      register: sealed_ns
+      failed_when: false
+      changed_when: false
+
+    - name: Uninstall Sealed Secrets namespaced resources if namespace exists
+      ansible.builtin.command: >-
+        kubectl delete all,cm,sa,role,rolebinding,svc,deploy,sts,rs,pod,secrets --all
+        -n {{ sealedsecrets_namespace }} --ignore-not-found
+      when: sealed_ns.rc == 0
+      changed_when: false
+
+    - name: Download Sealed Secrets controller manifest for cleanup
+      ansible.builtin.get_url:
+        url: "https://github.com/bitnami-labs/sealed-secrets/releases/download/{{ sealed_secrets }}/controller.yaml"
+        dest: /tmp/sealed-secrets-controller.yaml
+        mode: '0600'
+
+    - name: Delete Sealed Secrets CRDs and cluster-scoped resources
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl delete -f /tmp/sealed-secrets-controller.yaml --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Delete Sealed Secrets namespace if present
+      ansible.builtin.command: kubectl delete ns {{ sealedsecrets_namespace }} --ignore-not-found
+      changed_when: false
+
+    - name: Remove temporary Sealed Secrets manifest
+      ansible.builtin.file:
+        path: /tmp/sealed-secrets-controller.yaml
+        state: absent
