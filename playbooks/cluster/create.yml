@@ -1,0 +1,5 @@
+---
+- import_playbook: ../k3s/install.yml
+- import_playbook: ../metallb/install.yml
+- import_playbook: ../sealed-secrets/install.yml
+- import_playbook: ../argocd/install.yml
