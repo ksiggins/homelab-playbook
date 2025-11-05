@@ -3,5 +3,9 @@ pihole_dns_records:
   - 192.168.90.101 traefik.lab.supermorphic.com
   - 192.168.90.101 longhorn.lab.supermorphic.com
   - 192.168.90.101 grafana.lab.supermorphic.com
+  - 192.168.90.102 argocd.staging.lab.supermorphic.com
+  - 192.168.90.102 traefik.staging.lab.supermorphic.com
+  - 192.168.90.102 longhorn.staging.lab.supermorphic.com
+  - 192.168.90.102 grafana.staging.lab.supermorphic.com
 
 pihole_dns_cname_records: []
