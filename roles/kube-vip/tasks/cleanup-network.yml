@@ -1,23 +1,27 @@
 ---
-- name: Ensure stale VIP address is removed from interfaces
-  ansible.builtin.shell: |-
-    set -o pipefail
-    ip -o -4 addr show eth0 | awk '/{{ k3s_registration_address }}/ {print $4}' | while read cidr; do
-      ip addr del "$cidr" dev eth0 || true
+- name: Ensure kube-vip VIP is fully removed from all interfaces
+  become: true
+  ansible.builtin.shell: |
+    #!/bin/bash
+    set -euo pipefail
+    VIP="{{ k3s_registration_address }}"
+
+    for iface in $(ip -o link show | awk -F': ' '{print $2}'); do
+      if ip -o addr show "$iface" | grep -q "$VIP"; then
+        echo "Removing stale VIP $VIP from $iface"
+        if ! ip addr del "$VIP"/32 dev "$iface"; then
+          echo "Fallback: trying generic delete"
+          ip addr del "$VIP" dev "$iface" || true
+        fi
+      fi
     done
-  failed_when: false
-  changed_when: false
 
-- name: Flush stale ARP and routing entries
-  ansible.builtin.shell: |-
     ip neigh flush all || true
+    arp -d "$VIP" 2>/dev/null || true
     ip route flush cache || true
+    echo "VIP cleanup completed."
+  args:
+    executable: /bin/bash
+  register: vip_cleanup
+  changed_when: "'Removing' in vip_cleanup.stdout"
   failed_when: false
-  changed_when: false
-
-- name: Reset loopback interface to base state
-  ansible.builtin.shell: |-
-    ip addr flush dev lo
-    ip addr add 127.0.0.1/8 dev lo
-  failed_when: false
-  changed_when: false
