@@ -1,8 +1,0 @@
----
-- name: Install Sealed Secrets manifests and restore key
-  ansible.builtin.include_tasks: install.yml
-  when: sealedsecrets_state == 'present'
-
-- name: Uninstall Sealed Secrets
-  ansible.builtin.include_tasks: uninstall.yml
-  when: sealedsecrets_state == 'absent'

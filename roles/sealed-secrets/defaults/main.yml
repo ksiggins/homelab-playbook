@@ -1,3 +1,0 @@
----
-sealedsecrets_state: present
-sealedsecrets_namespace: sealed-secrets
