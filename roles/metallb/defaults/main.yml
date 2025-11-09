@@ -1,5 +1,0 @@
----
-metallb_state: present
-metallb_namespace: metallb-system
-metallb_pool_name: local-pool
-metallb_adv_name: local-adv

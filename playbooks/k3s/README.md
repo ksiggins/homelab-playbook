@@ -15,16 +15,6 @@ In this cluster, **Kube-VIP** provides a high-availability control-plane endpoin
 - If the current leader node fails, another control-plane node automatically takes over and announces the same VIP.
 - **Does not handle Kubernetes `Service` resources** or act as a Service LoadBalancer.
 
-### MetalLB: Service LoadBalancer
-
-- **MetalLB** is the primary LoadBalancer for application Services.
-- Once deployed (via ArgoCD), MetalLB allocates external IPs from its configured address pools.
-- Kube-VIP remains responsible **only for the API VIP**, and MetalLB manages all Service-level load balancing.
-
-This staged setup establishes a clean and reliable bootstrap path:
-1. **Kube-VIP** → Ensures the K3s control plane remains highly available via `{{ k3s_registration_address }}`.
-3. **MetalLB** → Assumes global Service LoadBalancer responsibilities once deployed.
-
 Together, these components deliver a resilient transition from single-namespace bootstrap networking to full bare-metal load balancing, without conflicting IP ownership or downtime.
 
 ## Deployment Guide
@@ -204,9 +194,3 @@ ssh <leader-node> "ip -brief addr | grep $VIP"
 kubectl drain <leader-node> --ignore-daemonsets --delete-emptydir-data
 ```
 - Confirm the VIP migrates to another node and the API remains reachable.
-
-## Summary
-
-- **Kube-VIP** handles HA for the K3s control plane.
-- **MetalLB** provides LoadBalancer services for applications.
-- This architecture keeps the control-plane independent and resilient, while allowing MetalLB to manage user-facing traffic.

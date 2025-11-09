@@ -24,7 +24,5 @@ p1
 k3s_server
 
 # kube-vip virtual IP for the control-plane endpoint
-# metallb address pool for LoadBalancer services
 [k3s_cluster:vars]
 k3s_registration_address=192.168.90.98
-metallb_addresses=192.168.90.100-192.168.90.110

@@ -1,8 +1,0 @@
----
-- name: Deploy or update MetalLB components
-  ansible.builtin.include_tasks: install.yml
-  when: metallb_state == 'present'
-
-- name: Remove MetalLB components and configuration
-  ansible.builtin.include_tasks: uninstall.yml
-  when: metallb_state == 'absent'
