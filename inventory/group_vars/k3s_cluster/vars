@@ -1,6 +1,3 @@
-# Pre-generated bcrypt hash for argocd admin password
-argocd_bcrypt_password: $2a$10$A1T/znJnqZx7H2YCkJ4.9emQGF7v1LRb8IgJuu3t7qheO17cHZt9q
-
 # escalate user privileges for tasks that need root permissions
 k3s_become: true
 
