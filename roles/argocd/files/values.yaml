@@ -2,10 +2,6 @@
 fullnameOverride: argocd
 nameOverride: argocd
 
-server:
-  service:
-    type: LoadBalancer
-
 configs:
   cm:
     kustomize.buildOptions: "--enable-alpha-plugins --enable-exec"
