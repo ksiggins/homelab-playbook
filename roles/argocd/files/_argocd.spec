@@ -5,3 +5,4 @@ repo: https://argoproj.github.io/argo-helm
 version: 9.1.0
 namespace: argocd
 valuesFile: values.yaml
+outputFile: ../templates/argocd.yaml

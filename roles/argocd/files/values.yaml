@@ -1,3 +1,4 @@
+---
 fullnameOverride: argocd
 nameOverride: argocd
 
@@ -5,112 +6,47 @@ server:
   service:
     type: LoadBalancer
 
-repoServer:
-  env:
-    - name: SOPS_AGE_KEY_FILE
-      value: /home/argocd/.config/sops/age/keys.txt
-
-  volumes:
-    - name: sops-age-key
-      secret:
-        secretName: sops-age-key
-    - name: sops-bin
-      emptyDir: {}
-    - name: cmp-plugin
-      configMap:
-        name: argocd-sops-plugin
-
-  volumeMounts:
-    - name: sops-age-key
-      mountPath: /home/argocd/.config/sops/age
-      readOnly: true
-    - name: sops-bin
-      mountPath: /usr/local/bin/sops
-      subPath: sops
-      readOnly: true
-    - name: cmp-plugin
-      mountPath: /home/argocd/cmp-server/plugins
-
-  initContainers:
-    - name: sops-installer
-      image: alpine:3.20
-      command:
-        - sh
-        - -c
-        - |
-          set -e
-          apk add --no-cache curl jq
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) ARCH=amd64 ;;
-            aarch64|arm64) ARCH=arm64 ;;
-            *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
-          esac
-          VERSION=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | jq -r .tag_name)
-          echo "Downloading SOPS ${VERSION} for ${ARCH}"
-          [ -d /shared/sops ] && rm -rf /shared/sops
-          curl -L -o /shared/sops "https://github.com/getsops/sops/releases/download/${VERSION}/sops-${VERSION}.linux.${ARCH}"
-          chmod +x /shared/sops
-          echo "Installed static SOPS binary:"
-          /shared/sops --version || true
-      volumeMounts:
-        - name: sops-bin
-          mountPath: /shared
-fullnameOverride: argocd
-nameOverride: argocd
-
-server:
-  service:
-    type: LoadBalancer
+configs:
+  cm:
+    kustomize.buildOptions: "--enable-alpha-plugins --enable-exec"
 
 repoServer:
   env:
+    - name: XDG_CONFIG_HOME
+      value: /.config
     - name: SOPS_AGE_KEY_FILE
-      value: /home/argocd/.config/sops/age/keys.txt
-
-  volumes:
-    - name: sops-age-key
-      secret:
-        secretName: sops-age-key
-    - name: sops-bin
-      emptyDir: {}
-    - name: cmp-plugin
-      configMap:
-        name: argocd-sops-plugin
-
-  volumeMounts:
-    - name: sops-age-key
-      mountPath: /home/argocd/.config/sops/age
-      readOnly: true
-    - name: sops-bin
-      mountPath: /usr/local/bin/sops
-      subPath: sops
-      readOnly: true
-    - name: cmp-plugin
-      mountPath: /home/argocd/cmp-server/plugins
+      value: /.config/sops/age/keys.txt
 
   initContainers:
-    - name: sops-installer
-      image: alpine:3.20
-      command:
-        - sh
-        - -c
+    - name: install-ksops
+      image: viaductoss/ksops:v4.3.3
+      command: ["/bin/sh", "-c"]
+      args:
         - |
-          set -e
-          apk add --no-cache curl jq
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) ARCH=amd64 ;;
-            aarch64|arm64) ARCH=arm64 ;;
-            *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
-          esac
-          VERSION=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | jq -r .tag_name)
-          echo "Downloading SOPS ${VERSION} for ${ARCH}"
-          [ -d /shared/sops ] && rm -rf /shared/sops
-          curl -L -o /shared/sops "https://github.com/getsops/sops/releases/download/${VERSION}/sops-${VERSION}.linux.${ARCH}"
-          chmod +x /shared/sops
-          echo "Installed static SOPS binary:"
-          /shared/sops --version || true
+          echo "Installing KSOPS...";
+          mv ksops /custom-tools/;
+          mv kustomize /custom-tools/;
+          echo "Done.";
       volumeMounts:
-        - name: sops-bin
-          mountPath: /shared
+        - mountPath: /custom-tools
+          name: custom-tools
+
+  volumeMounts:
+    - mountPath: /usr/local/bin/kustomize
+      name: custom-tools
+      subPath: kustomize
+    - mountPath: /usr/local/bin/ksops
+      name: custom-tools
+      subPath: ksops
+    - mountPath: /.config/kustomize/plugin/viaduct.ai/v1/ksops/ksops
+      name: custom-tools
+      subPath: ksops
+    - mountPath: /.config/sops/age
+      name: sops-age
+
+  volumes:
+    - name: custom-tools
+      emptyDir: {}
+    - name: sops-age
+      secret:
+        secretName: sops-age-key

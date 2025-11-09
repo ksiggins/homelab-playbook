@@ -1,3 +1,2 @@
 ---
 argocd_state: present
-argocd_namespace: argocd

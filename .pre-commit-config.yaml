@@ -9,6 +9,7 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-json
       - id: check-case-conflict
       - id: requirements-txt-fixer

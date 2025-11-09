@@ -11,6 +11,7 @@
 #   namespace: cert-manager
 #   valuesFile: values.yaml
 #   includeCRDs: true
+#   outputFile: ../templates/cert-manager.yaml
 #
 # Behavior:
 #   - If 'includeCRDs: true' is set, adds '--include-crds' to the Helm command
@@ -18,7 +19,8 @@
 #   - 'name' and 'repo' are required.
 #   - If 'version' is omitted, the latest chart version is used.
 #   - If 'namespace' is omitted, the default 'default' namespace is applied.
-#   - Output is written to <chart-name>.yaml in the same folder as the spec file.
+#   - Output is written to <chart-name>.yaml in the same folder as the spec file,
+#     unless 'outputFile' is provided.
 
 set -eEuo pipefail
 
@@ -30,6 +32,7 @@ print_example() {
   echo "  namespace: cert-manager"
   echo "  valuesFile: values.yaml"
   echo "  includeCRDs: true"
+  echo "  outputFile: ../templates/cert-manager.yaml"
 }
 
 if [ $# -lt 1 ]; then
@@ -69,6 +72,7 @@ VALUES_FILE="$(parse_yaml_value valuesFile)"
 CHART_PATH="$(parse_yaml_value chart)"
 NAMESPACE="$(parse_yaml_value namespace)"
 INCLUDE_CRDS_RAW="$(parse_yaml_value includeCRDs)"
+OUTPUT_FILE_RELATIVE="$(parse_yaml_value outputFile)"
 
 # Validate required fields
 if [ -z "$CHART_NAME" ] || [ -z "$REPO_URL" ]; then
@@ -81,7 +85,15 @@ fi
 # Defaults
 CHART_PATH="${CHART_PATH:-$CHART_NAME}"
 NAMESPACE="${NAMESPACE:-default}"
-OUT_FILE="$SPEC_DIR/${CHART_NAME}.yaml"
+
+# Handle optional outputFile path
+if [ -n "$OUTPUT_FILE_RELATIVE" ]; then
+  # Normalize relative path to absolute
+  OUT_FILE="$(cd "$SPEC_DIR" && realpath "$OUTPUT_FILE_RELATIVE" 2>/dev/null || \
+    echo "$SPEC_DIR/$OUTPUT_FILE_RELATIVE")"
+else
+  OUT_FILE="$SPEC_DIR/${CHART_NAME}.yaml"
+fi
 
 # Normalize includeCRDs value (case-insensitive, macOS-safe)
 INCLUDE_CRDS_RAW_LOWER="$(echo "$INCLUDE_CRDS_RAW" | tr '[:upper:]' '[:lower:]' 2>/dev/null || true)"

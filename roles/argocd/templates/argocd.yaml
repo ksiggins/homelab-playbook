@@ -147,6 +147,7 @@ data:
   application.instanceLabelKey: argocd.argoproj.io/instance
   application.sync.impersonation.enabled: "false"
   exec.enabled: "false"
+  kustomize.buildOptions: --enable-alpha-plugins --enable-exec
   resource.customizations.ignoreResourceUpdates.ConfigMap: |
     jqPathExpressions:
       # Ignore the cluster-autoscaler status
@@ -24674,7 +24675,7 @@ rules:
   - apiGroups:
       - batch
     resources:
-      
+
       - jobs
     verbs:
       - create
@@ -24683,7 +24684,7 @@ rules:
     resources:
       - workflows
     verbs:
-      
+
       - create
 ---
 # Source: argo-cd/templates/argocd-application-controller/clusterrolebinding.yaml
@@ -25205,7 +25206,7 @@ metadata:
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
 spec:
-  type: ClusterIP  
+  type: ClusterIP
   ports:
   - name: http-webhook
     port: 7000
@@ -25228,7 +25229,7 @@ metadata:
     app.kubernetes.io/version: "v3.2.0"
   name: argocd-repo-server
   namespace: argocd
-spec:  
+spec:
   ports:
   - name: tcp-repo-server
     protocol: TCP
@@ -25253,7 +25254,7 @@ metadata:
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
 spec:
-  type: LoadBalancer  
+  type: LoadBalancer
   externalTrafficPolicy: Cluster
   sessionAffinity: None
   ports:
@@ -25283,7 +25284,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
-spec:  
+spec:
   ports:
   - name: http
     protocol: TCP
@@ -25311,7 +25312,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
-spec:  
+spec:
   ports:
   - name: redis
     port: 6379
@@ -25774,7 +25775,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 5a38559edb55bf20a8f5184789f81f875a3804502709d075528b3247371280a8
+        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-repo-server
@@ -25796,8 +25797,10 @@ spec:
         - --port=8081
         - --metrics-port=8084
         env:
+          - name: XDG_CONFIG_HOME
+            value: /.config
           - name: SOPS_AGE_KEY_FILE
-            value: /home/argocd/.config/sops/age/keys.txt
+            value: /.config/sops/age/keys.txt
           - name: ARGOCD_REPO_SERVER_NAME
             value: argocd-repo-server
           - name: ARGOCD_RECONCILIATION_TIMEOUT
@@ -26047,15 +26050,17 @@ spec:
           - name: HELM_DATA_HOME
             value: /helm-working-dir
         volumeMounts:
-        - mountPath: /home/argocd/.config/sops/age
-          name: sops-age-key
-          readOnly: true
-        - mountPath: /usr/local/bin/sops
-          name: sops-bin
-          readOnly: true
-          subPath: sops
-        - mountPath: /home/argocd/cmp-server/plugins
-          name: cmp-plugin
+        - mountPath: /usr/local/bin/kustomize
+          name: custom-tools
+          subPath: kustomize
+        - mountPath: /usr/local/bin/ksops
+          name: custom-tools
+          subPath: ksops
+        - mountPath: /.config/kustomize/plugin/viaduct.ai/v1/ksops/ksops
+          name: custom-tools
+          subPath: ksops
+        - mountPath: /.config/sops/age
+          name: sops-age
         - mountPath: /app/config/ssh
           name: ssh-known-hosts
         - mountPath: /app/config/tls
@@ -26131,30 +26136,20 @@ spec:
         volumeMounts:
         - mountPath: /var/run/argocd
           name: var-files
-      - command:
-        - sh
-        - -c
+      - args:
         - |
-          set -e
-          apk add --no-cache curl jq
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) ARCH=amd64 ;;
-            aarch64|arm64) ARCH=arm64 ;;
-            *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
-          esac
-          VERSION=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | jq -r .tag_name)
-          echo "Downloading SOPS ${VERSION} for ${ARCH}"
-          [ -d /shared/sops ] && rm -rf /shared/sops
-          curl -L -o /shared/sops "https://github.com/getsops/sops/releases/download/${VERSION}/sops-${VERSION}.linux.${ARCH}"
-          chmod +x /shared/sops
-          echo "Installed static SOPS binary:"
-          /shared/sops --version || true
-        image: alpine:3.20
-        name: sops-installer
+          echo "Installing KSOPS...";
+          mv ksops /custom-tools/;
+          mv kustomize /custom-tools/;
+          echo "Done.";
+        command:
+        - /bin/sh
+        - -c
+        image: viaductoss/ksops:v4.3.3
+        name: install-ksops
         volumeMounts:
-        - mountPath: /shared
-          name: sops-bin
+        - mountPath: /custom-tools
+          name: custom-tools
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -26167,14 +26162,11 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
       volumes:
-      - name: sops-age-key
+      - emptyDir: {}
+        name: custom-tools
+      - name: sops-age
         secret:
           secretName: sops-age-key
-      - emptyDir: {}
-        name: sops-bin
-      - configMap:
-          name: argocd-sops-plugin
-        name: cmp-plugin
       - name: helm-working-dir
         emptyDir: {}
       - name: plugins
@@ -26232,7 +26224,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 5a38559edb55bf20a8f5184789f81f875a3804502709d075528b3247371280a8
+        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-server
@@ -26936,7 +26928,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 5a38559edb55bf20a8f5184789f81f875a3804502709d075528b3247371280a8
+        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-application-controller

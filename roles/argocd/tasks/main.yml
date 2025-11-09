@@ -3,10 +3,6 @@
   ansible.builtin.include_tasks: install.yml
   when: argocd_state == 'present'
 
-- name: Patch ArgoCD service and admin credentials
-  ansible.builtin.include_tasks: patch.yml
-  when: argocd_state == 'present'
-
 - name: Uninstall ArgoCD
   ansible.builtin.include_tasks: uninstall.yml
   when: argocd_state == 'absent'
