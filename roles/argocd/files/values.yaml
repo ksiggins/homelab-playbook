@@ -5,6 +5,9 @@ nameOverride: argocd
 configs:
   cm:
     kustomize.buildOptions: "--enable-alpha-plugins --enable-exec"
+    accounts.readonly: apiKey
+  rbac:
+    policy.csv: "g, readonly, role:readonly"
 
 repoServer:
   env:

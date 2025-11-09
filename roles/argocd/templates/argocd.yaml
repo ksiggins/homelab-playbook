@@ -143,6 +143,7 @@ metadata:
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
 data:
+  accounts.readonly: apiKey
   admin.enabled: "true"
   application.instanceLabelKey: argocd.argoproj.io/instance
   application.sync.impersonation.enabled: "false"
@@ -330,7 +331,7 @@ metadata:
     app.kubernetes.io/part-of: argocd
     app.kubernetes.io/version: "v3.2.0"
 data:
-  policy.csv: ""
+  policy.csv: g, readonly, role:readonly
   policy.default: ""
   policy.matchMode: glob
   scopes: '[groups]'
@@ -25774,7 +25775,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
+        checksum/cm: d54588cfd753cdeb34e753309c31f2481de510e043d9bdda3704dfa634be8231
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-repo-server
@@ -26223,7 +26224,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
+        checksum/cm: d54588cfd753cdeb34e753309c31f2481de510e043d9bdda3704dfa634be8231
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-server
@@ -26927,7 +26928,7 @@ spec:
     metadata:
       annotations:
         checksum/cmd-params: 8f172624a05d467de283f3dfb1e5cd9972322564fc52b71727096376f8d4aa23
-        checksum/cm: 25554ae929c3bdbba31955a26d51c3644aad71a8591b69990def11ff572c2878
+        checksum/cm: d54588cfd753cdeb34e753309c31f2481de510e043d9bdda3704dfa634be8231
       labels:
         helm.sh/chart: argo-cd-9.1.0
         app.kubernetes.io/name: argocd-application-controller
