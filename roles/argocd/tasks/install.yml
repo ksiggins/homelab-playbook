@@ -1,5 +1,5 @@
 ---
-- name: Install and verify ArgoCD deployment
+- name: Install and verify Argo CD deployment
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   run_once: true
@@ -17,7 +17,7 @@
         dest: "/tmp/argocd-manifests/{{ item | basename }}"
         mode: '0600'
       with_fileglob:
-        - "{{ role_path }}/templates/*.yaml"
+        - "{{ role_path }}/templates/*"
 
     - name: Apply all Argo CD manifests declaratively
       ansible.builtin.command: kubectl apply -f /tmp/argocd-manifests/
