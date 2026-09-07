@@ -31,8 +31,8 @@ does not deploy a container runtime or an application.
 4. Production initially contains only `nuc4`. Future semantic groups and hosts
    enter the active inventory when their owning initiatives make them active.
 5. A focused repository-owned role manages static hostname and timezone. The
-   existing read-only baseline verifier checks their effective state. Issue #3
-   later exposes that verifier as a standalone `os verify` action.
+   read-only baseline verifier checks their effective state during provisioning,
+   maintenance, and standalone `os verify` runs.
 6. NUC #4 uses the static hostname `nuc4` and the timezone local to the
    machine's deployment. The public specification and inventory do not disclose
    the exact timezone.
@@ -259,8 +259,8 @@ and expected-timezone inputs. It reads effective state and asserts:
 
 Provisioning passes the host-identity inputs to the verifier after all changes
 and after any Ansible-controlled reboot. Maintenance passes the same expected
-inputs during its existing post-update verification. Issue #3 later adds an
-`os verify` operator action that gathers fresh facts and runs the same checks
+inputs during its existing post-update verification. The standalone
+`os verify` action gathers fresh facts and runs the same checks
 without reconciliation, package updates, service restarts, or reboots.
 
 Invalid or empty host-identity inputs fail before identity mutation. A missing
@@ -391,8 +391,8 @@ Issue #2 is complete when:
 6. `host_identity` configures static hostname and timezone idempotently on both
    complete-baseline test platforms without a new dependency or target package;
 7. the existing verifier independently detects hostname and timezone drift
-   after provisioning and maintenance, and Issue #3 can expose the same checks
-   through a standalone verification playbook;
+   after provisioning and maintenance, and through the standalone `os verify`
+   playbook;
 8. the repository stores no private key, recovery passphrase, live
    address, or plaintext protected inventory value;
 9. local production commands use the canonical runner and configured SOPS

@@ -40,29 +40,48 @@ The repository-root alias is an equivalent thin forwarding wrapper:
 
 Execute against production or staging only with explicit operator direction.
 
-### OS baseline operations
+### OS baseline commands
 
-The OS playbooks inspect, provision, and maintain Debian 13 and Rocky Linux 9
-hosts in `os_managed`. The source-adjacent
-[OS playbook README](playbooks/os/README.md) summarizes their composition and
-development boundaries. Follow the
-[managed host onboarding guide](docs/guides/managed-host-onboarding.md) for
-manual prerequisites, SSH setup, inventory and secret preparation, exact live
-commands, lifecycle decisions, verification, and recovery.
+These commands target Debian 13 and Rocky Linux 9 hosts in `os_managed`.
+The examples select the current production host, `nuc4`. Complete the
+[managed host onboarding guide](docs/guides/managed-host-onboarding.md) first
+for manual host preparation, SSH access, inventory, and Vault setup.
 
-The active production inventory contains `nuc4` as the first managed-host
-example. Native daily security updates remain separate from explicit full
-maintenance, and no host-local recurring full-update scheduler exists.
+| Command | Purpose |
+| --- | --- |
+| `mise run playbook -- os inspect production --limit nuc4 --ask-vault-pass` | Read a basic OS fact snapshot. |
+| `mise run playbook -- os provision production --limit nuc4 --ask-vault-pass` | Perform a full update, reconcile the complete baseline, reboot if needed, and verify. |
+| `mise run playbook -- os maintain production --limit nuc4 --ask-vault-pass` | Perform a later full package update, reboot if needed, and verify without reapplying configuration. |
+| `mise run playbook -- os verify production --limit nuc4 --ask-vault-pass` | Check the complete effective baseline without changes. |
 
-### Podman foundation operations
+Provisioning and maintenance include verification. Use standalone verification
+at any time to check for drift; use provisioning to reconcile it. A successful
+provisioning run includes a full update, so do not immediately follow it with
+maintenance. Native daily security updates remain separate from explicit full
+maintenance; no host-local recurring full-update scheduler exists.
 
-The [Podman foundation guide](docs/guides/podman-foundation.md) describes
-`podman provision` and observational `podman verify`. The foundation prepares
-official distribution Podman capability and reusable service-account ownership.
-`nuc4` belongs to `podman_hosts`, with no service accounts declared yet.
-Later application initiatives add their own accounts, state, and secret-free
-Quadlets. Standalone `os verify` checks the existing OS baseline at any time;
-OS provisioning and maintenance retain their included verification.
+See the [OS playbook README](playbooks/os/README.md) for inputs, composition,
+and validation boundaries.
+
+### Podman foundation commands
+
+Run these after establishing the OS baseline. They target `podman_hosts`;
+`nuc4` is the current production member. Inventory parsing still requires the
+OS Vault password even though the foundation does not consume secret values.
+
+| Command | Purpose |
+| --- | --- |
+| `mise run playbook -- podman provision production --limit nuc4 --ask-vault-pass` | Install Podman prerequisites, reconcile declared service accounts and directories, and verify. |
+| `mise run playbook -- podman verify production --limit nuc4 --ask-vault-pass` | Check installed capability, declared identities, permissions, and user-manager state without changes. |
+
+Provisioning includes verification. Standalone verification is useful for later
+drift checks, including after OS maintenance. Both verifiers stop at the first
+failed assertion and do not repair drift.
+
+The production service-account list is empty, so these commands currently
+establish and check host capability and shared directories. They deploy no
+applications. See the [Podman playbook README](playbooks/podman/README.md) for
+account inputs, ownership, failure recovery, and validation boundaries.
 
 ## Inventories
 

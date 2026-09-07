@@ -1,9 +1,10 @@
 # Documentation
 
+Use the [root README command reference](../README.md#running-playbooks) for
+routine playbook operations. Guides cover setup and recovery procedures.
+
 ## Guides
 
-- [Podman foundation](guides/podman-foundation.md) — Provision and verify
-  reusable rootless service identities and Quadlet host capability.
 - [GitHub main protection](guides/github-main-protection.md) — Inspect, verify,
   and recover the repository's protected-branch settings.
 - [Managed host onboarding](guides/managed-host-onboarding.md) — Prepare,
