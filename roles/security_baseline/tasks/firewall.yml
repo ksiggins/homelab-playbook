@@ -269,13 +269,15 @@
   no_log: true
   when: security_baseline_apply_firewall_runtime | bool
 
-- name: Read runtime management interface zone
+- name: Query runtime homelab management interface binding
   ansible.builtin.command:
     argv:
       - /usr/bin/firewall-cmd
-      - "--get-zone-of-interface={{ security_baseline_firewall_management.interface }}"
-  register: security_baseline_firewall_management_runtime_zone
+      - --zone=homelab
+      - "--query-interface={{ security_baseline_firewall_management.interface }}"
+  register: security_baseline_firewall_management_runtime_binding
   changed_when: false
+  failed_when: security_baseline_firewall_management_runtime_binding.rc not in [0, 1]
   when: security_baseline_apply_firewall_runtime | bool
 
 - name: Bind runtime management interface to homelab
@@ -287,16 +289,18 @@
   changed_when: true
   when:
     - security_baseline_apply_firewall_runtime | bool
-    - security_baseline_firewall_management_runtime_zone.stdout | trim != 'homelab'
+    - security_baseline_firewall_management_runtime_binding.rc == 1
 
-- name: Read permanent management interface zone
+- name: Query permanent homelab management interface binding
   ansible.builtin.command:
     argv:
       - /usr/bin/firewall-cmd
       - --permanent
-      - "--get-zone-of-interface={{ security_baseline_firewall_management.interface }}"
-  register: security_baseline_firewall_management_permanent_zone
+      - --zone=homelab
+      - "--query-interface={{ security_baseline_firewall_management.interface }}"
+  register: security_baseline_firewall_management_permanent_binding
   changed_when: false
+  failed_when: security_baseline_firewall_management_permanent_binding.rc not in [0, 1]
   when: security_baseline_apply_firewall_runtime | bool
 
 - name: Persist management interface binding to homelab
@@ -309,7 +313,7 @@
   changed_when: true
   when:
     - security_baseline_apply_firewall_runtime | bool
-    - security_baseline_firewall_management_permanent_zone.stdout | trim != 'homelab'
+    - security_baseline_firewall_management_permanent_binding.rc == 1
 
 - name: Read back runtime management interface binding
   ansible.builtin.command:

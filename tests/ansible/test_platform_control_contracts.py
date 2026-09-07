@@ -938,6 +938,50 @@ homelab (active)
             if runtime_only_target:
                 self.assertIn("--permanent", argv)
 
+    def test_unbound_management_interface_reaches_binding(self) -> None:
+        tasks = load_tasks("roles/security_baseline/tasks/firewall.yml")
+        names = [task["name"] for task in tasks]
+        expected_queries = {
+            "Query runtime homelab management interface binding": [
+                "/usr/bin/firewall-cmd",
+                "--zone=homelab",
+                "--query-interface={{ security_baseline_firewall_management.interface }}",
+            ],
+            "Query permanent homelab management interface binding": [
+                "/usr/bin/firewall-cmd",
+                "--permanent",
+                "--zone=homelab",
+                "--query-interface={{ security_baseline_firewall_management.interface }}",
+            ],
+        }
+
+        for name, expected_argv in expected_queries.items():
+            with self.subTest(task=name):
+                task = tasks[names.index(name)]
+                self.assertEqual(
+                    expected_argv,
+                    task["ansible.builtin.command"]["argv"],
+                )
+                register = task["register"]
+                self.assertEqual(
+                    f"{register}.rc not in [0, 1]",
+                    task["failed_when"],
+                )
+
+        bind_tasks = (
+            "Bind runtime management interface to homelab",
+            "Persist management interface binding to homelab",
+        )
+        for name in bind_tasks:
+            with self.subTest(task=name):
+                task = tasks[names.index(name)]
+                query_result = (
+                    "security_baseline_firewall_management_runtime_binding"
+                    if name.startswith("Bind runtime")
+                    else "security_baseline_firewall_management_permanent_binding"
+                )
+                self.assertIn(f"{query_result}.rc == 1", task["when"])
+
     def test_exact_policy_comparison_ignores_firewalld_output_order(self) -> None:
         rules = [
             (
