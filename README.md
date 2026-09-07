@@ -39,20 +39,22 @@ The repository-root alias is an equivalent thin forwarding wrapper:
 ```
 
 Execute against production or staging only with explicit operator direction.
+Commands apply to every host in the playbook's target group within the selected
+inventory. Add `--limit <host-or-pattern>` when you need a narrower target.
 
 ### OS baseline commands
 
 These commands target Debian 13 and Rocky Linux 9 hosts in `os_managed`.
-The examples select the current production host, `nuc4`. Complete the
+The examples use the production inventory. Complete the
 [managed host onboarding guide](docs/guides/managed-host-onboarding.md) first
 for manual host preparation, SSH access, inventory, and secret setup.
 
 | Command | Purpose |
 | --- | --- |
-| `mise run playbook -- os inspect production --limit nuc4` | Read a basic OS fact snapshot. |
-| `mise run playbook -- os provision production --limit nuc4` | Perform a full update, reconcile the complete baseline, reboot if needed, and verify. |
-| `mise run playbook -- os maintain production --limit nuc4` | Perform a later full package update, reboot if needed, and verify without reapplying configuration. |
-| `mise run playbook -- os verify production --limit nuc4` | Check the complete effective baseline without changes. |
+| `mise run playbook -- os inspect production` | Read a basic OS fact snapshot. |
+| `mise run playbook -- os provision production` | Perform a full update, reconcile the complete baseline, reboot if needed, and verify. |
+| `mise run playbook -- os maintain production` | Perform a later full package update, reboot if needed, and verify without reapplying configuration. |
+| `mise run playbook -- os verify production` | Check the complete effective baseline without changes. |
 
 Provisioning and maintenance include verification. Use standalone verification
 at any time to check for drift; use provisioning to reconcile it. A successful
@@ -73,8 +75,8 @@ workstation before running playbooks.
 
 | Command | Purpose |
 | --- | --- |
-| `mise run playbook -- podman provision production --limit nuc4` | Install Podman prerequisites, reconcile declared service accounts and directories, and verify. |
-| `mise run playbook -- podman verify production --limit nuc4` | Check installed capability, declared identities, permissions, and user-manager state without changes. |
+| `mise run playbook -- podman provision production` | Install Podman prerequisites, reconcile declared service accounts and directories, and verify. |
+| `mise run playbook -- podman verify production` | Check installed capability, declared identities, permissions, and user-manager state without changes. |
 
 Provisioning includes verification. Standalone verification is useful for later
 drift checks, including after OS maintenance. Both verifiers stop at the first
