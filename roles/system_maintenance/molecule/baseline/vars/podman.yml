@@ -1,0 +1,16 @@
+---
+podman_foundation_accounts:  # noqa var-naming[no-role-prefix] - Public input to the Podman role under test.
+  - name: svc-fixture-a
+    uid: 2001
+    gid: 2001
+    subuid_start: 200000
+    subuid_count: 65536
+    subgid_start: 200000
+    subgid_count: 65536
+  - name: svc-fixture-b
+    uid: 2002
+    gid: 2002
+    subuid_start: 300000
+    subuid_count: 65536
+    subgid_start: 300000
+    subgid_count: 65536

@@ -75,7 +75,7 @@ Normal playbook commands need no extra secret flag. Ansible uses the configured
 `age_key_cmd` and the same Keychain helper:
 
 ```bash
-mise run playbook -- os inspect production --limit nuc4
+mise run playbook -- os inspect production
 ```
 
 Production and staging execution still requires explicit operator direction

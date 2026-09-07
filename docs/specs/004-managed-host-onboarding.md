@@ -31,8 +31,8 @@ does not deploy a container runtime or an application.
 4. Production initially contains only `nuc4`. Future semantic groups and hosts
    enter the active inventory when their owning initiatives make them active.
 5. A focused repository-owned role manages static hostname and timezone. The
-   existing read-only baseline verifier checks their effective state; no
-   standalone OS verification playbook is added.
+   read-only baseline verifier checks their effective state during provisioning,
+   maintenance, and standalone `os verify` runs.
 6. NUC #4 uses the static hostname `nuc4` and the timezone local to the
    machine's deployment. The public specification and inventory do not disclose
    the exact timezone.
@@ -81,7 +81,6 @@ does not deploy a container runtime or an application.
 - root SSH login, password-based SSH, sudo password storage, and fallback
   credentials;
 - a separate human administrator login;
-- a standalone read-only OS verification playbook;
 - plaintext age identity files and shared operator/controller identities;
 - Git, Podman, Quadlet, Forgejo, Semaphore, Forgejo Runner, TLS automation,
   application services, and their packages or ports;
@@ -260,8 +259,9 @@ and expected-timezone inputs. It reads effective state and asserts:
 
 Provisioning passes the host-identity inputs to the verifier after all changes
 and after any Ansible-controlled reboot. Maintenance passes the same expected
-inputs during its existing post-update verification. No new `os verify`
-operator action is created.
+inputs during its existing post-update verification. The standalone
+`os verify` action gathers fresh facts and runs the same checks
+without reconciliation, package updates, service restarts, or reboots.
 
 Invalid or empty host-identity inputs fail before identity mutation. A missing
 or inaccessible age identity fails before Ansible can use the encrypted
@@ -391,7 +391,7 @@ Issue #2 is complete when:
 6. `host_identity` configures static hostname and timezone idempotently on both
    complete-baseline test platforms without a new dependency or target package;
 7. the existing verifier independently detects hostname and timezone drift
-   after provisioning and maintenance, with no standalone verification
+   after provisioning and maintenance, and through the standalone `os verify`
    playbook;
 8. the repository stores no private key, recovery passphrase, live
    address, or plaintext protected inventory value;

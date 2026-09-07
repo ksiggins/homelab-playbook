@@ -83,6 +83,7 @@
            ~ ',lport=' ~ (os_baseline_verify_sshd_connection.local_port | string) }}
   register: os_baseline_verify_sshd_effective
   changed_when: false
+  no_log: true
 
 - name: Verify effective SSH policy
   ansible.builtin.assert:

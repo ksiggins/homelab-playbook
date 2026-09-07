@@ -1,0 +1,66 @@
+---
+- name: Validate supported Podman foundation platform and authority
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == '9')
+      - ansible_facts['service_mgr'] == 'systemd'
+      - ansible_user | default('') == 'ansible'
+      - ansible_password is not defined
+      - ansible_ssh_pass is not defined
+      - ansible_ssh_password is not defined
+      - ansible_become_password is not defined
+      - ansible_become_pass is not defined
+    fail_msg: Podman foundation requires a supported OS baseline and key-only ansible administration
+
+- name: Read cgroup filesystem type
+  ansible.builtin.command:
+    argv: [/usr/bin/stat, -f, -c, '%T', /sys/fs/cgroup]
+  register: podman_foundation_cgroup
+  changed_when: false
+  check_mode: false
+
+- name: Require cgroup v2 for Quadlet
+  ansible.builtin.assert:
+    that: podman_foundation_cgroup.stdout | trim == 'cgroup2fs'
+    fail_msg: Podman Quadlet requires cgroup v2; correct the host baseline first
+
+- name: Read subordinate identity provider configuration
+  ansible.builtin.slurp:
+    src: /etc/nsswitch.conf
+  register: podman_foundation_nsswitch
+
+- name: Require file-based subordinate identity delegation
+  ansible.builtin.assert:
+    that:
+      - podman_foundation_nsswitch.content | b64decode | podman_foundation_file_subid_provider
+    fail_msg: Non-file subordinate identity providers require a separately reviewed integration
+
+- name: Inspect allocation files and shared directory boundaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+    - /etc/containers
+    - /etc/containers/systemd
+    - /etc/containers/systemd/users
+    - /var/lib
+  register: podman_foundation_boundaries
+
+- name: Reject unsafe allocation files or parent directories
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.uid == 0
+      - not item.stat.exists or item.stat.mode[-2:] in ['00', '40', '44', '50', '55']
+      - not item.stat.exists or (item.stat.isreg if item.item in ['/etc/subuid', '/etc/subgid'] else item.stat.isdir)
+    fail_msg: Podman foundation requires root-owned non-writable parent boundaries and regular allocation files
+  loop: "{{ podman_foundation_boundaries.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate current identity allocations
+  ansible.builtin.import_tasks: identity-state.yml

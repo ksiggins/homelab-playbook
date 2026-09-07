@@ -1,0 +1,89 @@
+---
+- name: Verify the complete OS baseline
+  hosts: os_managed
+  serial: 1
+  any_errors_fatal: true
+  gather_facts: false
+  become: false
+  pre_tasks:
+    - name: Reject password-based verification credentials
+      ansible.builtin.assert:
+        that:
+          - ansible_password is not defined
+          - ansible_ssh_pass is not defined
+          - ansible_ssh_password is not defined
+          - ansible_become_password is not defined
+          - ansible_become_pass is not defined
+        fail_msg: >-
+          os verification requires key-only SSH and passwordless sudo for the
+          ansible account
+      no_log: true
+
+    - name: Prove fresh verification connection and privilege prerequisites
+      ansible.builtin.import_role:
+        name: os_bootstrap
+        tasks_from: connection-preflight.yml
+
+    - name: Gather privileged verification facts
+      ansible.builtin.setup:
+      become: true
+
+    - name: Load OS security policy defaults
+      ansible.builtin.include_vars:
+        file: ../../roles/security_baseline/defaults/main.yml
+        name: os_verify_security_defaults
+
+    - name: Load OS maintenance policy defaults
+      ansible.builtin.include_vars:
+        file: ../../roles/system_maintenance/defaults/main.yml
+        name: os_verify_maintenance_defaults
+
+    - name: Resolve standalone OS verification policy
+      ansible.builtin.set_fact:
+        os_verify_expected_firewall_services: >-
+          {{ os_baseline_verify_expected_firewall_services
+             | default(security_baseline_firewall_services
+                       | default(os_verify_security_defaults.security_baseline_firewall_services)) }}
+        os_verify_expected_journal_system_max_use: >-
+          {{ os_baseline_verify_expected_journal_system_max_use
+             | default(security_baseline_journal_system_max_use
+                       | default(os_verify_security_defaults.security_baseline_journal_system_max_use)) }}
+        os_verify_expected_journal_system_keep_free: >-
+          {{ os_baseline_verify_expected_journal_system_keep_free
+             | default(security_baseline_journal_system_keep_free
+                       | default(os_verify_security_defaults.security_baseline_journal_system_keep_free)) }}
+        os_verify_native_reboot_enabled: >-
+          {{ system_maintenance_native_reboot_enabled
+             | default(os_verify_maintenance_defaults.system_maintenance_native_reboot_enabled) }}
+        os_verify_security_update_calendar: >-
+          {{ system_maintenance_security_update_calendar
+             | default(os_verify_maintenance_defaults.system_maintenance_security_update_calendar) }}
+        os_verify_security_reboot_time: >-
+          {{ system_maintenance_security_reboot_time
+             | default(os_verify_maintenance_defaults.system_maintenance_security_reboot_time) }}
+
+  tasks:
+    - name: Verify the complete OS baseline without changing it
+      ansible.builtin.import_role:
+        name: os_baseline_verify
+        public: false
+      become: true
+      vars:
+        os_baseline_verify_expected_hostname: "{{ host_identity_hostname }}"
+        os_baseline_verify_expected_timezone: "{{ host_identity_timezone }}"
+        os_baseline_verify_expected_authorized_keys: >-
+          {{ security_baseline_authorized_keys }}
+        os_baseline_verify_expected_management_sources: >-
+          {{ security_baseline_management_sources }}
+        os_baseline_verify_expected_firewall_services: >-
+          {{ os_verify_expected_firewall_services }}
+        os_baseline_verify_expected_journal_system_max_use: >-
+          {{ os_verify_expected_journal_system_max_use }}
+        os_baseline_verify_expected_journal_system_keep_free: >-
+          {{ os_verify_expected_journal_system_keep_free }}
+        system_maintenance_native_reboot_enabled: >-  # noqa var-naming[no-role-prefix] - Verifier consumes maintenance policy.
+          {{ os_verify_native_reboot_enabled }}
+        system_maintenance_security_update_calendar: >-  # noqa var-naming[no-role-prefix] - Verifier consumes maintenance policy.
+          {{ os_verify_security_update_calendar }}
+        system_maintenance_security_reboot_time: >-  # noqa var-naming[no-role-prefix] - Verifier consumes maintenance policy.
+          {{ os_verify_security_reboot_time }}

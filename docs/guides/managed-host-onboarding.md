@@ -209,7 +209,7 @@ When rotating controller access, use an add-verify-remove sequence:
 Each controller or operator uses a distinct private key. Never share a private
 key between the operator workstation and an automation controller.
 
-## 6. Inspect and provision
+## 6. Inspect, provision, and verify
 
 Use the canonical repository gateway. Substitute the approved inventory and
 host limit for a different deployment.
@@ -237,6 +237,19 @@ reconciles host identity and the security baseline, configures native security
 updates, reboots when required, reconnects, and verifies effective state before
 the batch advances.
 
+After successful provisioning, use standalone verification when an operator
+needs a later read-only drift check. For `nuc4`:
+
+```bash
+mise run playbook -- os verify production --limit nuc4
+```
+
+This operation rechecks the connection and passwordless-sudo path, gathers
+fresh facts, and verifies the complete baseline. It does not update packages,
+repair configuration, restart services, or reboot. Provisioning and maintenance
+already run the same verifier, so an immediate separate verification run adds
+no evidence after either operation succeeds.
+
 The repository gateway rejects Ansible password prompts, password files,
 `--start-at-task`, tag selection, and `--step` for mutating OS operations.
 These controls could bypass the required key-only access or safety checks.
@@ -249,9 +262,10 @@ Use each operation according to the host's lifecycle:
 | --- | --- | --- |
 | Before a change, when a snapshot is useful | `os inspect` | Reports allowlisted OS facts without mutation. |
 | After installation satisfies the manual prerequisites | `os provision` | Updates, reconciles, and verifies the complete baseline. |
+| Later, or when drift is suspected | `os verify` | Checks the complete effective baseline without changing it. |
 | Every day after provisioning | Native security updater | Applies security-only updates in its configured window. |
 | Periodically after provisioning | `os maintain` | Performs a full package update and verifies without reapplying baseline configuration. |
-| After incomplete provisioning or suspected drift | `os provision` | Repeats complete reconciliation and verification. |
+| After incomplete provisioning or reported drift | `os provision` | Repeats complete reconciliation and verification. |
 
 A successful `os provision` already includes the initial full package update
 and verification. Do not immediately follow it with `os maintain`.
@@ -309,7 +323,9 @@ password-based SSH, or an unlocked automation-account password as a fallback.
 The complete baseline verifier is read-only. It checks effective access, SSH,
 firewall, mandatory access control, native time service, logging, updater
 configuration, package-manager health, reboot-required state, and failed
-systemd units. It repairs nothing.
+systemd units. It repairs nothing and reports the first failed assertion rather
+than an exhaustive drift inventory. Correct the reported cause and use an
+authorized provisioning run when baseline state needs reconciliation.
 
 Failure evidence remains in systemd failed-unit state, persistent journald,
 auditd, and APT or DNF history. A future automation-controller task can add its

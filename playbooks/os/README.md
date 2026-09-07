@@ -1,9 +1,9 @@
 # Operating-system playbooks
 
 This directory contains the Ansible entry points for inspecting, provisioning,
-and maintaining off-cluster operating systems. The playbooks target the
-`os_managed` inventory group. They do not install an operating system, create
-initial administrative authority, or schedule recurring full updates.
+verifying, and maintaining off-cluster operating systems. The playbooks target
+the `os_managed` inventory group. They do not install an operating system,
+create initial administrative authority, or schedule recurring full updates.
 
 Follow the [managed host onboarding guide](../../docs/guides/managed-host-onboarding.md)
 for workstation SSH setup, manual host prerequisites, inventory preparation,
@@ -35,11 +35,19 @@ and existing time sources.
 - `maintain.yml` performs later full package updates, reboots when required,
   and verifies effective baseline state without reapplying baseline
   configuration.
+- `verify.yml` performs connection and privilege preflight, gathers fresh facts,
+  and checks the complete effective baseline without updating packages,
+  changing configuration, restarting services, or rebooting.
 
-Provisioning and maintenance process selected hosts one at a time. A successful
-provisioning run already includes a full update, so it must not be followed
-immediately by maintenance. Use provisioning again after an incomplete run or
-when authoritative baseline inputs or suspected drift require reconciliation.
+Provisioning, maintenance, and standalone verification process selected hosts
+one at a time. Provisioning and maintenance already include verification. Use
+`verify.yml` for a later drift check; it stops at the first failed assertion and
+does not produce an exhaustive drift report. Use provisioning again after an
+incomplete run or when authoritative baseline inputs or reported drift require
+reconciliation.
+
+A successful provisioning run also includes a full update; do not run
+maintenance immediately afterward just to repeat that update.
 
 ## Required state and inputs
 
@@ -66,6 +74,9 @@ The canonical repository gateway rejects password-based Ansible access and
 execution controls that could skip required safety tasks. Provisioning and
 maintenance have no reboot-suppression input. Native daily security updates
 and their reboot behavior remain independent of explicit full maintenance.
+Standalone verification loads the security and maintenance policy defaults
+without running either role's mutating tasks, and inventory values continue to
+override those defaults.
 
 The baseline verifier observes effective host state and repairs nothing.
 Molecule validation is offline and secret-free. It cannot prove physical

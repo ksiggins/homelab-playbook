@@ -63,7 +63,8 @@ and focused maintained mechanisms.
 - firewalld, SELinux or AppArmor, platform-native time synchronization,
   persistent journald, and auditd;
 - read-only effective-state verification reusable after provisioning, after an
-  Ansible-controlled reboot, and from a future Semaphore schedule;
+  Ansible-controlled reboot, through a standalone operator action, and from a
+  future Semaphore schedule;
 - complete-composition Molecule coverage for Debian 13 and Rocky Linux 9.
 
 ### Excluded
@@ -378,8 +379,11 @@ monitor may deliver availability failures to the operator's selected service.
 ## Verification and failure signals
 
 The repository provides a reusable, read-only Ansible verification task set. It
-runs after complete provisioning and every Ansible-controlled reboot. Issue #4
-can schedule the same task set after native maintenance windows.
+runs after complete provisioning and every Ansible-controlled reboot. A
+standalone `os verify` action performs connection and privilege preflight,
+gathers fresh facts, and invokes the same task set without package updates,
+repairs, service restarts, or reboots. Issue #4 can schedule the same task set
+after native maintenance windows.
 
 The verifier owns its expected-policy interface. Provisioning and maintenance
 pass the required authorized-key and management-source inputs explicitly.
@@ -387,6 +391,12 @@ Optional firewall-service and journal-size expectations use low-precedence
 verifier defaults that follow the security-baseline policy defaults and retain
 inventory overrides. The verifier does not depend on the security-baseline role
 having run earlier in the play.
+
+Standalone verification loads the security and maintenance role defaults into
+private namespaces without invoking either role's tasks. It resolves direct
+verifier overrides first, then producer inventory overrides, then producer
+defaults, and passes the effective values explicitly to the verifier. It stops
+at the first failed assertion and does not promise an exhaustive drift report.
 
 Verification checks:
 
@@ -451,6 +461,8 @@ The implementation keeps four clear responsibilities:
 `playbooks/os/provision.yml` composes these responsibilities in the lifecycle
 defined above. A separate OS maintenance playbook exposes full update and
 post-update verification for direct workstation and future Semaphore use.
+`playbooks/os/verify.yml` exposes the same effective-state checks independently
+without invoking either mutating lifecycle.
 `mise run playbook` remains the only repository playbook execution interface.
 
 ## Testing and evidence

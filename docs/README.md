@@ -1,5 +1,8 @@
 # Documentation
 
+Use the [root README command reference](../README.md#running-playbooks) for
+routine playbook operations. Guides cover setup and recovery procedures.
+
 ## Guides
 
 - [GitHub main protection](guides/github-main-protection.md) — Inspect, verify,
@@ -30,3 +33,6 @@
 - [005 — SOPS and age inventory secrets](specs/005-sops-age-secrets.md) —
   Defines the one-way migration from Ansible Vault and the current secret
   loading, identity, recovery, and validation contract.
+- [006 — Podman and Quadlet foundation](specs/006-podman-quadlet-foundation.md) —
+  Defines separate service-account ownership, stable identity allocations, and
+  reusable rootless container conventions without deploying applications.

@@ -1,0 +1,33 @@
+---
+- name: Read installed Podman version without initializing storage
+  ansible.builtin.command:
+    argv: [/usr/bin/podman, --version]
+  register: podman_foundation_version
+  changed_when: false
+  check_mode: false
+
+- name: Require distribution Podman with Quadlet support
+  ansible.builtin.assert:
+    that:
+      - (podman_foundation_version.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+')) is version('4.4.0', '>=')
+    fail_msg: Installed Podman lacks the required Quadlet capability
+
+- name: Inspect rootless and Quadlet executables
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/bin/newuidmap
+    - /usr/bin/newgidmap
+    - /usr/bin/pasta
+    - /usr/lib/systemd/system-generators/podman-system-generator
+  register: podman_foundation_executables
+
+- name: Verify executable prerequisites
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.executable
+    fail_msg: A required distribution rootless Podman executable is missing
+  loop: "{{ podman_foundation_executables.results }}"
+  loop_control:
+    label: "{{ item.item }}"
