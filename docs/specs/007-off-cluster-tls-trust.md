@@ -2,7 +2,7 @@
 
 Issue: [#5](https://github.com/supermorphic/homelab-playbook/issues/5)
 
-Status: hybrid topology approved; detailed implementation design pending review.
+Status: hybrid topology and architecture approved with review refinements below.
 The guides describe operator procedures. The NUC #4 issuer, certificate handoff,
 and modem route are not implemented by this design document.
 
@@ -37,13 +37,21 @@ Use a single exact hostname and certificate for each UniFi console. The
 `protect.example.com`, and `nas.example.com` as placeholders. Pi-hole local
 records point directly to those endpoints.
 
-Use one separately issued `*.example.com` wildcard for Caddy's directly nested
-off-cluster hostnames, including `modem.example.com`. Examples are synthetic;
-real names and addresses are operator inputs. A wildcard covers neither the
-zone apex nor deeper names such as `service.lab.example.com`. The cluster's
-certificate and issuer remain independent; this design does not reuse their
-private keys, ACME accounts, or DNS credentials. Do not add an apex SAN unless
-an approved route needs it.
+Use one separately issued `*.infra.example.com` wildcard for Caddy's directly
+nested off-cluster hostnames, including `modem.infra.example.com`. Keep direct
+UniFi names outside that namespace. The Caddy certificate's exact approved SAN
+set is one DNS name: `*.infra.example.com`. Do not add `*.example.com`, the
+namespace apex, UniFi names, or cluster names to that certificate.
+
+Examples are synthetic; real names and addresses are operator inputs. The
+dedicated namespace ensures the Caddy wildcard private key cannot authenticate
+the directly managed UniFi names. This certificate boundary does not narrow the
+Cloudflare token's separately documented zone-wide DNS permissions. A wildcard
+covers neither its namespace apex nor deeper names such as
+`service.extra.infra.example.com`. The cluster's certificate and issuer remain
+independent; this design does not reuse their private keys, ACME accounts, or
+DNS credentials. Expanding the approved SAN set requires an explicit design and
+configuration review, not automatic inclusion of names requested by the issuer.
 
 The modem name resolves to NUC #4's private listener. Caddy connects to the modem's
 actual management address. All selected DNS names remain stable across private
@@ -105,12 +113,45 @@ provider credentials instead of command-line token arguments. Caddy, application
 accounts, and CI workloads receive neither that token nor ACME account keys.
 NUC #4 requires no live age identity merely to perform routine renewal.
 
-The issuer account cannot modify Caddy configuration, execute arbitrary reload
-commands, or write published certificate files. A fixed administrator-owned
-deployment program validates and publishes candidate certificate data. If a
-privileged coordinator is needed, it drops to the issuer identity for ACME and
-passes only fixed validated arguments to the deployment operation. No inventory
-field is treated as a shell hook.
+Select one fixed privilege mechanism: an administrator-owned systemd timer starts
+`homelab-tls-renew.service`, a root oneshot service whose fixed `ExecStart` is
+`/usr/local/libexec/homelab-tls-reconcile`, with no command-line arguments. The
+same root coordinator is used by the authorized Ansible renewal action. Its
+executable, units, configuration, and parent directories are root-owned and not
+writable by the issuer or proxy accounts.
+
+The coordinator performs this sequence under one root-owned exclusive lock:
+
+1. Load the fixed root-owned `/etc/homelab-tls/config.json` and validate its
+   schema, ownership, paths, and exact approved SAN set. Reject command fields,
+   executable hooks, unknown fields, and caller-supplied configuration paths.
+2. Start and await the fixed `homelab-tls-issuer.service` system oneshot. Its
+   administrator-owned unit runs the pinned client wrapper as the dedicated
+   non-login `svc-acme` account with `NoNewPrivileges=yes`, no supplementary
+   management groups, and only its private state writable. The issuer unit alone
+   receives the Cloudflare runtime credential. Neither unit is a templated
+   instance accepting caller-provided arguments.
+3. Once the issuer unit has stopped, snapshot its bounded certificate/key files
+   from fixed input locations into root-owned storage. Treat the bytes as
+   untrusted data; do not execute output or consume issuer-supplied path,
+   generation-name, command, environment, or argument metadata.
+4. Validate, publish, force Caddy reload, verify the served certificate, and
+   perform rollback when required. All these steps run in the root coordinator.
+   It generates publication identifiers and destinations itself beneath the
+   approved root. Caddy validation and reload use fixed argument vectors in a
+   root-owned integration adapter installed for issue #25's selected runtime;
+   they are never shell strings or issuer-controlled arguments.
+5. Record issuance and publication results separately. A failed issuance does
+   not prevent validation and retry of an already-issued pending certificate,
+   but remains visible in the overall result. No valid pending candidate means
+   leave the active generation unchanged.
+
+The issuer cannot modify coordinator policy, publication paths, Caddy
+configuration, reload commands, or verification targets. It has no sudo, polkit,
+setuid-helper, systemd-management, or container-socket grant to invoke privileged
+publication. It only produces certificate data; the independently privileged
+coordinator owns the transition. Invoke subprocesses without a shell and with
+an explicit sanitized environment. No inventory field is treated as a shell hook.
 
 ## Certificate handoff to Caddy
 
@@ -122,17 +163,37 @@ files are readable only by their owner and the proxy's specific read boundary.
 
 Use a stable `current/fullchain.pem` and `current/privkey.pem` interface beneath
 one administrator-owned certificate root. Publish both as a generation, then
-atomically switch the `current` directory reference. The implementation must
+atomically replace a relative `current` symlink to a complete generation beneath
+that same root. Keep the parent root directory itself stable; do not replace it
+during publication or rollback. The implementation must
 bind the root path and proxy read access to issue #25's actual runtime contract.
 Do not install guessed service names, UID allocations, or reload commands while
 that implementation is absent from this checkout.
 
+If issue #25 selects containerized Caddy, bind-mount the stable parent certificate
+root read-only into the container. Do not mount `current`, its resolved generation
+directory, or individual certificate files. For example, mounting the host
+publication root at `/etc/caddy/certificates` lets Caddy read
+`/etc/caddy/certificates/current/fullchain.pem` and
+`/etc/caddy/certificates/current/privkey.pem`. Relative symlink targets must remain
+within that mounted root. Each switch and rollback is therefore visible on the
+next file open in the existing container; force reload to reopen the files
+without recreating the container. Ensure new generations have the required
+numeric ownership, read permissions, and SELinux labels before switching, not
+only when the mount is first created. The mount contains only published
+generations, never issuer state, credential sources, or candidate snapshots.
+
 Before publication, copy bounded regular-file inputs into an administrator-owned
 snapshot without following untrusted symlinks. Validate only that immutable
-snapshot: key matches leaf certificate, intended SAN coverage, server use,
+snapshot: key matches leaf certificate, exact approved SAN set, server use,
 current validity and usable remaining lifetime, and chain verification against
-the host's public trust store. Reject staging certificates from production
-publication. Never trust issuer-provided metadata alone as the validation oracle.
+the host's public trust store. Compare canonical DNS SAN values against the
+root-owned approved set for equality, not subset coverage. Reject missing,
+duplicate, or additional SANs and any unapproved SAN type, including IP addresses
+or URIs. A certificate with the required wildcard plus any other name fails.
+Never use Common Name as a substitute for SAN validation. Reject staging
+certificates from production publication. Never trust issuer-provided metadata
+alone as the validation oracle.
 
 Repeat ownership, target-path, and active-generation checks immediately before
 switching. Validate Caddy configuration with the candidate generation before
@@ -196,9 +257,23 @@ selected ACME staging experiment uses separate account/state/output directories
 and cannot publish into the production certificate root or listener.
 
 Offline tests use synthetic names and ephemeral local keys. They cover malformed
-inputs, permissions, concurrent attempts, certificate/key mismatch, wrong SAN,
-expired or untrusted chains, publication failure, forced reload, rollback,
-interrupted deployment retry without reissuance, and observational verification.
+inputs, permissions, concurrent attempts, certificate/key mismatch, missing or
+additional SANs, unapproved SAN types, expired or untrusted chains, publication
+failure, forced reload, rollback, interrupted deployment retry without reissuance,
+and observational verification. Include a validly signed certificate containing
+the approved wildcard plus a UniFi hostname and prove that publication rejects
+it. Prove the published wildcard does not authenticate direct UniFi names.
+
+Privilege tests attempt issuer-controlled destination paths, symlinks, command
+metadata, and arguments. Verify that the issuer cannot write coordinator policy
+or published generations and that no such input changes the fixed privileged
+operation. Exercise pending publication retry after issuance failure.
+
+For containerized Caddy, a bounded registered container test mounts the stable
+parent once, publishes a replacement generation, forces reload, and checks the
+new served fingerprint without container recreation. Roll back and check the
+previous fingerprint in the same container. Assert the container identity is
+unchanged and include the supported platform's file-label and permission checks.
 Use independent cryptographic checks and effective system state as oracles.
 Bounded local TLS servers prove served-certificate checks; no Cloudflare token,
 production ACME request, or inventory host is available to CI.
@@ -238,3 +313,4 @@ files to it. Resolve that consumer before closing the full issue.
 - [lego Cloudflare provider](https://go-acme.github.io/lego/dns/cloudflare/)
 - [Caddy reload behavior](https://caddyserver.com/docs/command-line#caddy-reload)
 - [Caddy HTTPS transport](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#the-http-transport)
+- [Podman Quadlet volume configuration](https://docs.podman.io/en/stable/markdown/podman-systemd.unit.5.html)

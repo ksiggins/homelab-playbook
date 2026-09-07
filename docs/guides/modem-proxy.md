@@ -18,9 +18,14 @@ These values are synthetic examples, not production inputs:
 
 | Input | Example | Meaning |
 | --- | --- | --- |
-| Browser hostname | `modem.example.com` | Covered by Caddy's `*.example.com` certificate |
-| Pi-hole local A record | `modem.example.com` to `192.0.2.40` | NUC #4's private proxy listener address |
+| Browser hostname | `modem.infra.example.com` | Covered by Caddy's `*.infra.example.com` certificate |
+| Pi-hole local A record | `modem.infra.example.com` to `192.0.2.40` | NUC #4's private proxy listener address |
 | HTTPS backend | `https://192.0.2.50:443` | Modem's actual management address |
+
+Keep Caddy-served names under `infra.example.com`, separate from direct UniFi
+names such as `udm.example.com`, `protect.example.com`, and `nas.example.com`.
+Caddy's certificate contains exactly the `*.infra.example.com` DNS SAN; it does
+not include a broader wildcard or the directly managed appliance names.
 
 Create the exact local record on each Pi-hole instance used by management
 clients. The browser name resolves to NUC #4, not the modem. The Caddy backend

@@ -53,6 +53,12 @@ Replace them with the selected domain and the consoles' actual private addresses
 | Protect hosting console | `protect.example.com` | `192.0.2.30` |
 | UNAS Pro | `nas.example.com` | `192.0.2.20` |
 
+Keep these direct UniFi names outside Caddy's dedicated `infra.example.com`
+namespace. Caddy uses `*.infra.example.com`, including for
+`modem.infra.example.com`; that wildcard cannot authenticate the UniFi names
+above. The namespace boundary does not reduce the DNS permissions of tokens
+scoped to the shared Cloudflare zone.
+
 Use a single hostname per console for the initial setup. Avoid issuing another
 copy of Caddy's wildcard. Specific certificate names will be visible in public
 Certificate Transparency logs.
