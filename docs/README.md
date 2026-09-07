@@ -11,6 +11,10 @@ routine playbook operations. Guides cover setup and recovery procedures.
   provision, verify, maintain, and recover an off-cluster Ansible-managed host.
 - [SOPS secrets](guides/sops-secrets.md) — Set up and recover the operator age
   identity, edit protected inventory, and manage recipients.
+- [UniFi TLS certificates](guides/unifi-tls.md) — Configure native UniFi OS
+  certificate issuance and renewal with Cloudflare DNS and direct local access.
+- [ARRIS modem proxy](guides/modem-proxy.md) — Prepare private S34 browser access
+  through Caddy, including backend certificate trust and recovery requirements.
 
 ## Reference
 
@@ -36,3 +40,5 @@ routine playbook operations. Guides cover setup and recovery procedures.
 - [006 — Podman and Quadlet foundation](specs/006-podman-quadlet-foundation.md) —
   Defines separate service-account ownership, stable identity allocations, and
   reusable rootless container conventions without deploying applications.
+- [007 — Off-cluster TLS trust](specs/007-off-cluster-tls-trust.md) — Records the
+  selected hybrid topology and proposed NUC #4 certificate automation design.
