@@ -2,6 +2,15 @@
 
 Issue: [#1 Modernize homelab-playbook for agentic development](https://github.com/supermorphic/homelab-playbook/issues/1)
 
+## Status and supersession
+
+This specification preserves the modernization initiative's historical audit
+and decisions. Later specifications and current source define changed
+subsystems. In particular, [Specification 005](005-sops-age-secrets.md)
+supersedes the Ansible Vault design with SOPS and age. Vault-specific inventory
+examples and scope statements below are historical unless restated by a later
+specification.
+
 ## Purpose
 
 Modernize `homelab-playbook` into the safe, deterministic Ansible source for
@@ -145,7 +154,7 @@ These findings guide modernization. They do not authorize production execution.
 - Raspberry Pi provisioning;
 - off-cluster host configuration introduced through focused future
   specifications;
-- Ansible inventories, roles, playbooks, Vault content, and operator workflows;
+- Ansible inventories, roles, playbooks, encrypted content, and operator workflows;
 - offline validation of those sources.
 
 ## Supported operating systems
@@ -197,29 +206,33 @@ Requirements:
 
 ## Secrets design
 
-Ansible Vault remains the only encryption format in this repository.
+[Specification 005](005-sops-age-secrets.md) defines the current SOPS and age
+design. Encrypted inventory uses sibling `secrets.sops.yml` files. The dedicated
+workstation identity remains in the macOS login Keychain, independent controller
+identities use their own retrieval commands, and only public recipients are
+committed. Agents and CI never decrypt protected inventory.
 
-### Rationale
+### Historical decision superseded by Specification 005
 
-Ansible Vault follows the natural playbook execution path, avoids a collection or
-external decryption integration, and remains useful after Argo CD and KSOPS are
-removed. SOPS adds no durable consumer here.
-
-Both Ansible Vault and SOPS require external key material. The Vault password or
-password retrieval mechanism remains in the operator's password manager and is
-never committed, embedded in Mise configuration, printed by helper scripts, or
-made available to pull-request CI.
+This initiative originally retained Ansible Vault because it followed the
+existing playbook path and did not require another collection. It kept Vault
+password retrieval outside the repository and used an ephemeral Vault fixture
+for CI. Issue #18 later introduced a durable SOPS consumer, independent
+controller identities, and authenticated integration coverage, so the earlier
+format choice no longer applies.
 
 ### Requirements
 
-- encrypted variables use Ansible Vault;
+- encrypted variables use SOPS and age after the one-way operator conversion;
 - public variables live outside encrypted files;
 - secret filenames and variable boundaries are documented;
-- production, staging, and frozen Vault inputs are never decrypted,
-  inventory-parsed, or passed to Ansible semantic validation by CI;
+- production, staging, and frozen protected inputs are never decrypted by CI;
 - broad redacted repository secret scanning may inspect encrypted file bytes and
   history without decrypting or printing their contents;
-- CI validates Vault integration with an ephemeral generated password and fixture;
+- static CI checks structure and public recipient metadata without claiming
+  cryptographic integrity;
+- `test:secrets` validates the configured SOPS integration with ephemeral age
+  identities and encrypted fixtures in an isolated environment;
 - scripts must not dump the environment;
 - examples contain no real addresses, tokens, passwords, or private keys beyond
   information intentionally public in inventory;
@@ -238,8 +251,8 @@ public-repository license and adds Apache's patent grant.
 Mise is the canonical task and tool entry point. It pins the controller runtime
 and supporting command-line tools and exposes memorable repository tasks.
 
-Mise does not store production credentials, Vault passwords, SSH material, or
-host-specific secrets.
+Mise does not store production credentials, age identities, recovery
+passphrases, SSH material, or host-specific secrets.
 
 ### Python and uv
 
@@ -305,7 +318,7 @@ It may only:
 3. replace itself with the canonical Mise task while forwarding `"$@"` exactly.
 
 It must not duplicate playbook resolution, inventory resolution, dependency
-installation, prompts, Vault policy, or Ansible flags. The current `run.sh` is
+installation, secret-loading policy, or Ansible flags. The current `run.sh` is
 replaced after contract tests prove equivalent intended argument forwarding.
 
 ## Agent workflow
@@ -517,7 +530,7 @@ Workflow requirements:
 - `persist-credentials: false` where applicable;
 - cancellation of superseded runs for the same pull request;
 - bounded job timeouts;
-- no production credentials, Vault password, SSH key, kubeconfig, or host access;
+- no production credentials, age identity, SSH key, kubeconfig, or host access;
 - no cached passing result used as evidence;
 - concise GitHub summary containing selected depth, reasons, commands, and
   per-group duration;
@@ -595,7 +608,7 @@ Each invariant runs once:
 - inventory validation owns inventory parsing and group/host resolution;
 - ShellCheck and `bash -n` own shell semantics and parsing;
 - wrapper contract tests own operator argument and failure behavior;
-- the Vault fixture owns secret integration behavior;
+- `test:secrets` owns SOPS secret integration behavior;
 - Gitleaks owns broad repository secret-pattern detection;
 - actionlint and zizmor own GitHub workflow correctness and security analysis.
 
@@ -641,8 +654,10 @@ The initial high-value set is:
 - playbook discovery coverage;
 - exact Galaxy dependency resolution into the repository-local path;
 - operator-wrapper integration contracts;
-- an ephemeral Ansible Vault fixture covering creation, encryption, decryption,
-  and playbook consumption without production material.
+- `validate:secrets` checks protected-file structure and public recipient
+  metadata without decryption;
+- `test:secrets` uses ephemeral age identities and encrypted fixtures to cover
+  Ansible loading and failure behavior without production material.
 
 ### Scheduled/manual checks
 
@@ -712,7 +727,7 @@ architecture, or runner. A future focused specification may introduce those
 decisions. Container-based CI must not be described as equivalent to VM or
 physical-hardware validation.
 
-## Migration sequence
+## Historical migration sequence
 
 The implementation plan must preserve reviewable boundaries:
 
@@ -731,9 +746,10 @@ The implementation plan must preserve reviewable boundaries:
 The plan may reorder adjacent steps where tests require it, but must not mix
 production deployment into repository modernization.
 
-## Acceptance criteria
+## Historical acceptance criteria
 
-Issue #1 is complete when:
+Issue #1 was accepted against these criteria. Its Vault-specific criterion was
+superseded by Specification 005:
 
 1. repository responsibilities and current consumers are accurately documented;
 2. Apache License 2.0 replaces GPL-3.0 and repository documentation identifies it;

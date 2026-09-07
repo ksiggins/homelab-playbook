@@ -21,6 +21,10 @@ mise install
 mise run bootstrap
 ```
 
+Set up or restore the dedicated repository age identity as described in the
+[SOPS secrets guide](sops-secrets.md). The login Keychain must be unlocked for
+protected inventory and playbook operations.
+
 The target needs all of these conditions before Ansible runs:
 
 - a supported operating system that boots normally;
@@ -128,12 +132,12 @@ Place active hosts under `os_managed` in the selected environment's
 `group_vars/os_managed/vars.yml`, and put the host's public desired hostname in
 `host_vars/<host>/vars.yml`.
 
-The repository registers each encrypted inventory path explicitly with its
-secret-free validation boundary. Before adding the first managed host to a new
-environment or using a new Vault path, land a reviewed repository change that
-adds the public inventory contracts and registers the exact encrypted path with
-the Vault guard and YAML lint exclusion. Do not create an unregistered Vault
-path as an operator-only step.
+The repository registers encrypted inventory scopes explicitly in `.sops.yaml`
+and its secret-free validation boundary. Before adding the first managed host to
+a new environment or using a new protected path, land a reviewed repository
+change that adds the public inventory contracts, SOPS creation rule, and exact
+static-validation scope. Do not create an unregistered protected path as an
+operator-only step.
 
 The current production example resolves to this shape:
 
@@ -171,18 +175,12 @@ baseline authoritatively limits inbound SSH through the firewall. Include all
 approved keys and sources; partial sets can remove valid access during
 provisioning.
 
-Create the encrypted `os_managed` Vault only when it does not exist. For the
-current production example:
+Create the encrypted `os_managed` document only when it does not exist. For the
+current production example, use the repository SOPS gateway:
 
 ```bash
-mise exec -- ansible-vault create inventory/production/group_vars/os_managed/vault.yml
-```
-
-When the Vault already exists, change it with the corresponding interactive
-command. For the current production example:
-
-```bash
-mise exec -- ansible-vault edit inventory/production/group_vars/os_managed/vault.yml
+mise run secrets:sops -- \
+  inventory/production/group_vars/os_managed/secrets.sops.yml
 ```
 
 Enter only operator-approved values in place of these marked placeholders:
@@ -196,9 +194,10 @@ security_baseline_management_sources:
   - "<private management CIDR>"
 ```
 
-Treat the Vault as opaque during repository development and validation. Do not
-decrypt, print, parse, or inspect its protected values. Do not use a Vault
-password file or automated password retrieval for these local commands.
+For later changes, run the same command on the existing file. Treat protected
+inventory as opaque during repository development and validation. Do not
+decrypt, print, parse, or inspect its protected values outside the authorized
+operator edit. Do not copy the age identity into a plaintext file.
 
 When rotating controller access, use an add-verify-remove sequence:
 
@@ -218,7 +217,7 @@ host limit for a different deployment.
 An authorized operator can first collect a read-only snapshot. For `nuc4`:
 
 ```bash
-mise run playbook -- os inspect production --limit nuc4 --ask-vault-pass
+mise run playbook -- os inspect production --limit nuc4
 ```
 
 Inspection reports allowlisted operating-system facts without privilege
@@ -230,7 +229,7 @@ After review and fresh explicit authorization for the exact live mutation,
 provision the host:
 
 ```bash
-mise run playbook -- os provision production --limit nuc4 --ask-vault-pass
+mise run playbook -- os provision production --limit nuc4
 ```
 
 Provisioning runs one host at a time. It performs the initial full update,
@@ -260,7 +259,7 @@ and verification. Do not immediately follow it with `os maintain`.
 For a later periodic full update of `nuc4`:
 
 ```bash
-mise run playbook -- os maintain production --limit nuc4 --ask-vault-pass
+mise run playbook -- os maintain production --limit nuc4
 ```
 
 Maintenance verifies hostname, timezone, access, and the rest of the baseline,

@@ -1,0 +1,6 @@
+---
+# Dedicated homelab-playbook operator public age recipient.
+creation_rules:
+  - path_regex: ^inventory/(production|staging|frozen/k3s)/(group_vars|host_vars)/.*\.sops\.yml$
+    age: age1ehm0ehd2v2emfuycf2p0suhg94ej29zcu96ffmh3t6afchhjd99sxc4984
+    encrypted_regex: '^(.*)$'

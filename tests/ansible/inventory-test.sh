@@ -8,14 +8,16 @@ trap 'rm -rf -- "$inventory_test_root"' EXIT
 
 printf '%s\n' '[defaults]' > "$inventory_test_root/ansible.cfg"
 export ANSIBLE_CONFIG="$inventory_test_root/ansible.cfg"
-unset \
-  ANSIBLE_ASK_VAULT_PASS \
-  ANSIBLE_VAULT_ENCRYPT_IDENTITY \
-  ANSIBLE_VAULT_ENCRYPT_SALT \
-  ANSIBLE_VAULT_IDENTITY \
-  ANSIBLE_VAULT_IDENTITY_LIST \
-  ANSIBLE_VAULT_ID_MATCH \
-  ANSIBLE_VAULT_PASSWORD_FILE
+# Isolate validation from operator plugins and credential retrieval commands.
+export ANSIBLE_VARS_ENABLED=host_group_vars
+export SOPS_ANSIBLE_AWX_DISABLE_VARS_PLUGIN_TEMPORARILY=true
+for credential_variable in $(compgen -e); do
+  case "$credential_variable" in
+    SOPS_AGE_*|ANSIBLE_SOPS_*|ANSIBLE_VAULT_*|ANSIBLE_ASK_VAULT_PASS)
+      unset "$credential_variable"
+      ;;
+  esac
+done
 
 mkdir -p \
   "$inventory_test_root/production/group_vars/os_managed" \

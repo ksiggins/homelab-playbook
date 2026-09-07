@@ -173,7 +173,7 @@ done
 (cd "$test_root/outside" && \
   PATH="$fake_bin:$PATH" FAKE_UV_LOG="$uv_log" \
   "$repo_root/scripts/playbook.sh" \
-  os provision production --limit nuc4 --ask-vault-pass)
+  os provision production --limit nuc4)
 printf '%s\n' \
   run \
   --frozen \
@@ -198,7 +198,6 @@ printf '%s\n' \
   "$repo_root/playbooks/os/provision.yml" \
   --limit \
   nuc4 \
-  --ask-vault-pass \
   --- >"$test_root/expected-uv.log"
 assert_file_equals "$test_root/expected-uv.log" "$uv_log"
 

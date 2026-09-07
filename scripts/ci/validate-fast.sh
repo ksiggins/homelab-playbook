@@ -11,6 +11,7 @@ uv run --frozen --no-sync python -m unittest discover -s tests/ci -p 'test_*.py'
 uv run --frozen --no-sync python -m unittest discover -s tests/repository -p 'test_*.py'
 uv run --frozen --no-sync python -m unittest discover -s tests/toolchain -p 'test_*.py'
 uv run --frozen --no-sync python scripts/ci/repository_validation.py
+uv run --frozen --no-sync python scripts/secrets/validate.py
 uv run --frozen --no-sync yamllint --strict .
 bash tests/operator/run-playbook-test.sh
 
