@@ -150,6 +150,44 @@ Bootstrap establishes the locked local controller and Galaxy capability. It
 does not authorize playbook execution or install dependencies implicitly during
 a later live operation.
 
+### Secret identity bootstrap
+
+```text
+mise run secrets:bootstrap -- --backup /outside/repo/operator.age
+mise run secrets:bootstrap -- --restore /outside/repo/operator.age
+```
+
+This purpose-specific bootstrap establishes or restores the repository's
+operator age identity in the macOS login Keychain and verifies read-back. It
+creates an encrypted recovery artifact at the exact operator-selected path
+outside the repository. It reports only the public recipient. It does not
+authorize inventory conversion or playbook execution.
+
+### Secret validation and integration test
+
+```text
+mise run validate:secrets
+mise run test:secrets
+```
+
+`validate:secrets` is local validation: it checks protected-file structure and
+public recipient metadata without an identity or authenticated decryption.
+`test:secrets` is a controlled experiment: it creates ephemeral identities and
+encrypted fixtures in an isolated temporary environment, exercises the real
+Ansible SOPS loading path, and removes its run-owned state. Neither command
+accesses Keychain or protected inventory plaintext.
+
+### Direct secret editing
+
+```text
+mise run secrets:sops -- <sops-args...>
+```
+
+This is the repository gateway for direct SOPS operations. It confines SOPS
+identity discovery to the selected retrieval command and defaults to the
+repository Keychain helper. Its effect depends on the SOPS arguments; editing a
+protected inventory file is an operator-owned mutation of that exact local file.
+
 ## Command and failure contracts
 
 - Validate public arguments and registered targets before starting an operation.

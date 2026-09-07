@@ -2,6 +2,12 @@
 
 Issue: [#2 Bootstrap NUC #4 Debian host with Ansible](https://github.com/supermorphic/homelab-playbook/issues/2)
 
+## Status and supersession
+
+The managed-host design remains current. [Specification 005](005-sops-age-secrets.md)
+supersedes its Ansible Vault storage and interactive password workflow. The
+implementation sequence records the original rollout and is historical.
+
 ## Purpose
 
 Establish a repeatable path for adding an installed Linux host to the existing
@@ -34,10 +40,9 @@ does not deploy a container runtime or an application.
    adds no convenience, development, container, or application packages. Git
    is not required on a managed host.
 8. The exact timezone, complete desired SSH public-key set, and private
-   management-source set live in Ansible Vault. Local operator runs use
-   interactive `--ask-vault-pass`. This initiative adds no password file,
-   Keychain client, password-manager integration, or repository helper for the
-   Vault password.
+   management-source set live in SOPS-encrypted inventory. Local operator runs
+   retrieve the dedicated age identity from the login Keychain through the
+   repository helper. No plaintext identity file is used.
 9. The human operator may use the `ansible` login with their own authorized
    private key. This initiative does not add a second human administrator
    account or a shared private key.
@@ -77,8 +82,7 @@ does not deploy a container runtime or an application.
   credentials;
 - a separate human administrator login;
 - a standalone read-only OS verification playbook;
-- macOS Keychain, Proton Pass CLI, Vault password-client scripts, plaintext
-  Vault password files, and other password-saving conveniences;
+- plaintext age identity files and shared operator/controller identities;
 - Git, Podman, Quadlet, Forgejo, Semaphore, Forgejo Runner, TLS automation,
   application services, and their packages or ports;
 - Pi-hole provisioning, migration, or deletion on a live machine;
@@ -180,7 +184,7 @@ The inventory host alias and desired hostname are explicit separate inputs.
 This permits a future inventory alias or resolvable address to differ from the
 operating system's static hostname without an implicit rename.
 
-## Vault input and command behavior
+## Protected input and command behavior
 
 The complete desired SSH public-key set is required because the existing
 security baseline authoritatively manages the `ansible` account's
@@ -205,22 +209,23 @@ Do not place the protected values in public inventory, documentation, commands,
 issue text, pull-request text, or CI output. Agents and CI treat the encrypted
 file as opaque and never decrypt or inspect its protected values.
 
-Offline validation reads only repository metadata and the first line of each
-registered Vault file. It requires a regular, non-symlink file with a valid
-Ansible Vault header and rejects plaintext at a protected path. This format
-guard complements Gitleaks because a generic secret scanner cannot prove that
-every protected value is encrypted.
+The protected document is
+`inventory/production/group_vars/os_managed/secrets.sops.yml`. Offline
+validation checks SOPS structure and public recipient metadata without an age
+identity. It does not claim cryptographic integrity or expose protected values.
 
-The operator creates or edits the registered Vault and supplies its password
-interactively with `--ask-vault-pass`. No playbook calls a credential helper.
-The canonical runner forwards the interactive request to `ansible-playbook`
-and rejects SSH and sudo password prompts for mutating OS operations because
-those would violate the established key-only, passwordless-sudo authority
-boundary. The onboarding guide owns the exact Vault and playbook commands.
+The operator creates or edits the registered document through `mise run
+secrets:sops -- <sops-args...>`. The gateway isolates SOPS from ambient local
+identity sources and defaults to the repository Keychain helper. Normal playbook
+commands use the configured `community.sops` loader and the same isolation
+without an extra secret flag. The canonical runner still rejects SSH and sudo
+password prompts for mutating OS operations because those would violate the
+established key-only, passwordless-sudo authority boundary. The onboarding and
+SOPS guides own the exact commands.
 
-Issue #4 will separately design Semaphore's encrypted credential storage and
-task attachment. This initiative does not make a personal password manager or
-workstation credential store available to Semaphore.
+Future controllers use separate age identities and override
+`ANSIBLE_SOPS_AGE_KEY_CMD` with their controller-owned retrieval command. They
+do not receive the workstation identity or depend on its recovery path.
 
 ## Reusable host identity
 
@@ -258,12 +263,12 @@ and after any Ansible-controlled reboot. Maintenance passes the same expected
 inputs during its existing post-update verification. No new `os verify`
 operator action is created.
 
-Invalid or empty identity inputs fail before identity mutation. A missing Vault
-password fails before Ansible can use the encrypted baseline inputs. A failed
-access, repository, update, identity, security, reboot, or verification step
-stops the one-host batch. After the operator corrects the reported cause, they
-rerun `os provision`; they do not use `os maintain` to finish incomplete
-onboarding.
+Invalid or empty host-identity inputs fail before identity mutation. A missing
+or inaccessible age identity fails before Ansible can use the encrypted
+baseline inputs. A failed access, repository, update, identity, security,
+reboot, or verification step stops the one-host batch. After the operator
+corrects the reported cause, they rerun `os provision`; they do not use `os
+maintain` to finish incomplete onboarding.
 
 After provisioning, the operator confirms the effective hostname, the
 deployment-local timezone, and non-interactive root access through sudo. The
@@ -308,10 +313,8 @@ Offline evidence includes:
 - production inventory resolves exactly the active `os_managed` host `nuc4`;
 - public inventory supplies the `ansible` connection user and hostname without
   loading encrypted variables;
-- encrypted-source exclusion names the new `os_managed` Vault file and no
-  longer names the deleted production Pi-hole Vault file;
-- every registered Vault file has a valid Ansible Vault header without
-  decrypting or inspecting its protected values;
+- encrypted-source validation names the `os_managed` SOPS file and checks only
+  structure and public recipient metadata;
 - all OS playbooks target `os_managed` and preserve their current lifecycle and
   safety controls;
 - the complete-baseline Molecule scenario uses `os_managed` on Debian 13 and
@@ -321,12 +324,12 @@ Offline evidence includes:
 - the complete provisioning role order applies identity before baseline
   reconciliation and verifies it afterward;
 - no new target package or Galaxy dependency is introduced; and
-- `docs/guides/managed-host-onboarding.md` gives the exact interactive Vault
-  and onboarding commands while the source-adjacent OS README remains a brief
+- `docs/guides/managed-host-onboarding.md` gives the exact protected-input and
+  onboarding commands while the source-adjacent OS README remains a brief
   subsystem description.
 
 Molecule may use synthetic hostnames, the `UTC` timezone, and generated
-disposable SSH keys. It must not read the production Vault file or contact
+disposable SSH keys. It must not read the production protected file or contact
 `nuc4`. Container checks prove file, command, task-order, and idempotence
 contracts only. They do not prove a physical hostname transition across boot,
 wall-clock timezone behavior, network reachability, firewall enforcement, or
@@ -345,7 +348,7 @@ The change-directed classifier may require additional registered validation.
 It sets the minimum depth; implementation may escalate to `mise run ci` but may
 not skip required work.
 
-## Implementation sequence
+## Historical implementation sequence
 
 1. Update inventory, source-selection, playbook, and Molecule contract tests to
    express the `os_managed` and host-identity requirements.
@@ -368,6 +371,9 @@ not skip required work.
    authorization immediately before running `os provision` against production
    with `--limit nuc4 --ask-vault-pass`.
 
+Steps 6 and 9 record the original Vault-based rollout. They do not describe the
+current secret or command interface.
+
 ## Acceptance criteria
 
 Issue #2 is complete when:
@@ -380,17 +386,17 @@ Issue #2 is complete when:
    `nuc4` without disclosing the deployment timezone;
 4. the encrypted `os_managed` input contains the deployment-local timezone and
    complete desired authorized-key and private management-source sets, remains
-   opaque to agents and CI, and passes a non-decrypting Vault-format guard;
+   opaque to agents and CI, and passes non-decrypting SOPS metadata validation;
 5. no production Pi-hole variable or Vault file remains in active inventory;
 6. `host_identity` configures static hostname and timezone idempotently on both
    complete-baseline test platforms without a new dependency or target package;
 7. the existing verifier independently detects hostname and timezone drift
    after provisioning and maintenance, with no standalone verification
    playbook;
-8. the repository stores no private key, Vault password, password client, live
+8. the repository stores no private key, recovery passphrase, live
    address, or plaintext protected inventory value;
-9. local production commands use the canonical runner and interactive
-   `--ask-vault-pass` while SSH and sudo remain non-interactive and key-only;
+9. local production commands use the canonical runner and configured SOPS
+   Keychain helper while SSH and sudo remain non-interactive and key-only;
 10. no Git, Podman, Quadlet, Semaphore, Forgejo, runner, TLS, DNS, Plex,
     Kubernetes, Tailscale, or application responsibility enters this change;
 11. required offline change-directed validation passes without contacting a

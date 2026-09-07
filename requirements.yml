@@ -13,6 +13,8 @@ roles:
     src: https://github.com/willshersystems/ansible-sshd.git
     scm: git
 collections:
+  - name: community.sops
+    version: 2.4.0
   - name: community.general
     version: 13.3.0
   - name: community.library_inventory_filtering_v1

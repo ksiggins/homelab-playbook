@@ -6,6 +6,8 @@
   and recover the repository's protected-branch settings.
 - [Managed host onboarding](guides/managed-host-onboarding.md) — Prepare,
   provision, verify, maintain, and recover an off-cluster Ansible-managed host.
+- [SOPS secrets](guides/sops-secrets.md) — Set up and recover the operator age
+  identity, edit protected inventory, and manage recipients.
 
 ## Reference
 
@@ -25,3 +27,6 @@
 - [004 — Managed host onboarding](specs/004-managed-host-onboarding.md) —
   Defines the reusable onboarding design and the first active `os_managed`
   production host.
+- [005 — SOPS and age inventory secrets](specs/005-sops-age-secrets.md) —
+  Defines the one-way migration from Ansible Vault and the current secret
+  loading, identity, recovery, and validation contract.

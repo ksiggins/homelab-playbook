@@ -100,15 +100,22 @@ configuration fields, or quoted text solely to satisfy these style rules.
 
 ## Secrets and credentials
 
-- Ansible Vault is the repository encryption boundary. Vault passwords and
-  password-retrieval mechanisms remain outside the repository.
-- Never decrypt, print, or inspect production Vault values. Do not expose
+- SOPS with age is the repository encryption boundary. Live age identities and
+  their recovery passphrases remain outside the repository. Only public age
+  recipients may be committed. Never store live private age identities in
+  plaintext files; the macOS operator uses Keychain.
+- Never decrypt, print, or inspect protected production, staging, or frozen
+  inventory values. Do not expose
   plaintext credentials in agent output, repository artifacts, commits, issues,
   pull requests, or CI logs.
 - Secret-related implementation may change templates, schemas, references, and
   non-secret metadata without exposing underlying values.
+- Run direct SOPS operations through `mise run secrets:sops -- <sops-args...>`
+  so SOPS cannot discover an unintended ambient identity.
 - Use the repository's Gitleaks and staged-content safeguards. Do not embed key
-  material in Mise configuration, helper scripts, fixtures, or CI.
+  material in Mise configuration, helper scripts, fixtures, or CI. Ephemeral
+  identities created inside the isolated `test:secrets` workflow are test data,
+  not live identities.
 
 ## Public repository
 

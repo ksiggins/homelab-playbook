@@ -47,7 +47,7 @@ hosts in `os_managed`. The source-adjacent
 [OS playbook README](playbooks/os/README.md) summarizes their composition and
 development boundaries. Follow the
 [managed host onboarding guide](docs/guides/managed-host-onboarding.md) for
-manual prerequisites, SSH setup, inventory and Vault preparation, exact live
+manual prerequisites, SSH setup, inventory and secret preparation, exact live
 commands, lifecycle decisions, verification, and recovery.
 
 The active production inventory contains `nuc4` as the first managed-host
@@ -70,25 +70,24 @@ Each inventory directory stores its static host and group topology in
 
 ## Secrets
 
-Ansible Vault encrypts secret variables. Operators own Vault passwords outside
-the repository, such as in a password manager. Supply the active production OS
-Vault password interactively with `--ask-vault-pass`. Do not commit key
-material or embed it in Mise configuration, helper scripts, or pull-request CI.
-Do not decrypt, print, or inspect production Vault values during development or
-validation.
+SOPS encrypts inventory secrets to public age recipients. The operator's
+dedicated repository identity lives in the macOS login Keychain; its encrypted
+backup and backup passphrase remain outside every checkout. Future automation
+controllers use separate identities. See the [SOPS secrets guide](docs/guides/sops-secrets.md)
+for workstation setup, recovery, editing, and recipient changes.
 
 Public group variables live in `vars.yml`; version pins in `versions.yml` are
-public as well. Encrypted variables live only in sibling `vault.yml` files. The
+public as well. Encrypted variables use sibling `secrets.sops.yml` files. The
 active boundary is `inventory/production/group_vars/os_managed/`.
 `inventory/production/host_vars/nuc4/vars.yml` contains public hostname
-metadata. The sibling `os_managed/vault.yml` contains protected identity and
-access inputs. Validation treats it as opaque and never decrypts, parses, or
-inspects its protected values. Retained Semaphore inputs are under
+metadata. The sibling protected file contains identity and access inputs.
+Retained Semaphore inputs are under
 `inventory/staging/group_vars/semaphore/`, and retained K3s variables are under
-`inventory/frozen/k3s/group_vars/`. Inventory parsing and Ansible semantic
-validation use the public files and never receive encrypted `vault.yml` input.
-Broad redacted Gitleaks scans inspect repository bytes and history, including
-encrypted file bytes, without decryption or plaintext output.
+`inventory/frozen/k3s/group_vars/`.
+
+The operator completed the one-way conversion of production, staging, and
+frozen inventory. SOPS is the only current inventory encryption format.
+Agents and CI never decrypt or inspect protected inventory.
 
 ## Validation
 
@@ -98,12 +97,16 @@ claiming completion:
 ```bash
 mise run validate:fast
 mise run validate:ansible
+mise run validate:secrets
+mise run test:secrets
 mise run ci:changed
 ```
 
 `ci:changed` classifies committed and working-tree changes and runs the minimum
 required depth. Use `mise run ci` to force all currently implemented offline
-validation. Pull-request validation is offline and secret-free.
+validation. `validate:secrets` checks ciphertext structure and public recipient
+metadata. `test:secrets` uses only ephemeral identities and fixtures. Pull-request
+validation is offline and receives no live identity.
 
 ### Molecule tests
 

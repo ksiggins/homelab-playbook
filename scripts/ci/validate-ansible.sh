@@ -12,18 +12,21 @@ lint_output="$ansible_validation_root/ansible-lint.txt"
 printf '[defaults]\nroles_path = %s/.ansible/roles:%s/roles\ncollections_path = %s/.ansible/collections\n' \
   "$repo_root" "$repo_root" "$repo_root" > "$ansible_config"
 export ANSIBLE_CONFIG="$ansible_config"
-unset \
-  ANSIBLE_ASK_VAULT_PASS \
-  ANSIBLE_VAULT_ENCRYPT_IDENTITY \
-  ANSIBLE_VAULT_ENCRYPT_SALT \
-  ANSIBLE_VAULT_IDENTITY \
-  ANSIBLE_VAULT_IDENTITY_LIST \
-  ANSIBLE_VAULT_ID_MATCH \
-  ANSIBLE_VAULT_PASSWORD_FILE
+# Isolate validation from operator plugins and credential retrieval commands.
+export ANSIBLE_VARS_ENABLED=host_group_vars
+export SOPS_ANSIBLE_AWX_DISABLE_VARS_PLUGIN_TEMPORARILY=true
+for credential_variable in $(compgen -e); do
+  case "$credential_variable" in
+    SOPS_AGE_*|ANSIBLE_SOPS_*|ANSIBLE_VAULT_*|ANSIBLE_ASK_VAULT_PASS)
+      unset "$credential_variable"
+      ;;
+  esac
+done
 
 uv run --frozen --no-sync python scripts/dependencies.py verify
+uv run --frozen --no-sync python scripts/secrets/validate.py
 bash tests/ansible/inventory-test.sh
-bash tests/ansible/vault-test.sh
+mise run test:secrets
 uv run --frozen --no-sync python -m unittest discover -s tests/ansible -p 'test_*.py' -v
 
 ansible_source_manifest="$ansible_validation_root/ansible-sources.bin"

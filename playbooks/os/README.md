@@ -7,7 +7,9 @@ initial administrative authority, or schedule recurring full updates.
 
 Follow the [managed host onboarding guide](../../docs/guides/managed-host-onboarding.md)
 for workstation SSH setup, manual host prerequisites, inventory preparation,
-Vault input, live commands, verification, and recovery.
+protected input, live commands, verification, and recovery. The
+[SOPS secrets guide](../../docs/guides/sops-secrets.md) owns age identity setup,
+recovery, editing, and recipient management.
 
 ## Supported platforms
 
@@ -54,8 +56,9 @@ The complete baseline requires these protected inventory values:
   allowed to reach SSH.
 
 The public host variable `host_identity_hostname` supplies the desired static
-hostname. Production protected values remain in Ansible Vault and are opaque
-to repository validation.
+hostname. Production protected values use SOPS and age. Agents and CI do not
+decrypt or inspect them; static validation checks only structure and public
+recipient metadata.
 
 ## Safety and evidence boundaries
 
