@@ -16,6 +16,7 @@
     argv: [/usr/bin/timedatectl, show, --property=Timezone, --value]
   register: os_baseline_verify_timezone
   changed_when: false
+  no_log: true
 
 - name: Verify effective host identity
   ansible.builtin.assert:
@@ -30,3 +31,4 @@
         os_baseline_verify_timezone.stdout | trim ==
         os_baseline_verify_expected_timezone
     fail_msg: Static hostname, current hostname, or timezone has drifted
+  no_log: true
