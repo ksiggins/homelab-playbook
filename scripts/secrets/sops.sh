@@ -31,4 +31,10 @@ export SOPS_EDITOR="\"$sops_context/context.sh\" $editor_command"
 export HOME="$sops_context"
 export XDG_CONFIG_HOME="$sops_context"
 
-sops "$@"
+status=0
+sops "$@" || status=$?
+# SOPS uses 200 for an unchanged edit; that is a successful no-op for operators.
+if [[ "$status" -eq 200 ]]; then
+  exit 0
+fi
+exit "$status"

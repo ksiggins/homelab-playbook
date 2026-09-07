@@ -166,9 +166,31 @@ class SopsIntegrationTests(unittest.TestCase):
         self.env["SOPS_AGE_KEY_CMD"] = f"cat {shlex.quote(str(self.key))}"
         self.env["SOPS_EDITOR"] = shlex.quote(str(editor))
         result = self.run_command([str(ROOT / "scripts/secrets/sops.sh"), "--config", str(self.config), str(self.group_secret)])
-        # SOPS reports 200 when the editor leaves the plaintext unchanged.
-        self.assertIn(result.returncode, (0, 200), result.stderr.decode())
+        self.assertEqual(0, result.returncode, result.stderr.decode())
         self.assertEqual(f"{self.root}\n{self.root / 'config'}\n", marker.read_text())
+
+    def test_unchanged_edit_succeeds_without_rewriting_ciphertext(self):
+        original = self.group_secret.read_bytes()
+        self.env["SOPS_AGE_KEY_CMD"] = f"cat {shlex.quote(str(self.key))}"
+        self.env["SOPS_EDITOR"] = "/usr/bin/true"
+        result = self.run_command([
+            str(ROOT / "scripts/secrets/sops.sh"), "--config", str(self.config),
+            str(self.group_secret),
+        ])
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+        self.assertIn(b"File has not changed, exiting.", result.stderr)
+        self.assertEqual(original, self.group_secret.read_bytes())
+
+    def test_editor_failure_preserves_failure_status_and_ciphertext(self):
+        original = self.group_secret.read_bytes()
+        self.env["SOPS_AGE_KEY_CMD"] = f"cat {shlex.quote(str(self.key))}"
+        self.env["SOPS_EDITOR"] = "/usr/bin/false"
+        result = self.run_command([
+            str(ROOT / "scripts/secrets/sops.sh"), "--config", str(self.config),
+            str(self.group_secret),
+        ])
+        self.assertEqual(201, result.returncode, result.stderr.decode())
+        self.assertEqual(original, self.group_secret.read_bytes())
 
     def test_independent_second_recipient_can_decrypt_after_rewrap(self):
         other = self.root / "controller-identity"
