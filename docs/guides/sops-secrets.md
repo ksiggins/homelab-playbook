@@ -59,6 +59,11 @@ SOPS decrypts the editor buffer and writes only authenticated ciphertext to the
 protected file. Do not place protected data in YAML keys because keys remain
 visible.
 
+If you exit the editor without changes, SOPS prints `File has not changed,
+exiting.` The repository command treats this as success and leaves the encrypted
+file unchanged. Actual editor, key retrieval, and encryption failures still
+report a failed task.
+
 The gateway uses a temporary `HOME` and `XDG_CONFIG_HOME` for SOPS and clears
 ambient age key-file, inline-key, and SSH-key settings. This prevents SOPS from
 falling back to an unintended local identity. Its temporary context contains no
@@ -78,25 +83,54 @@ for the exact playbook, action, inventory, and extra arguments.
 
 ## Automation controllers
 
-Each future controller has its own age identity and receives only the inventory
-scope it needs. It never receives the workstation identity. Override the
-repository Keychain command for Ansible in the controller environment:
+An automation controller runs playbooks on your behalf. Semaphore is an example:
+you start or schedule a job through its web UI, and its runner executes Ansible.
+The runner needs access to the encrypted variables used by that job.
+
+When Semaphore or another controller is configured, give it its own age identity
+and authorize its public recipient only for the inventory scope it needs. It
+never receives your Mac's private identity. This section describes future
+controller setup; the repository does not provision that integration yet.
+
+For a controller job that runs a playbook, use:
 
 ```bash
 ANSIBLE_SOPS_AGE_KEY_CMD=/controller/owned/identity-command \
   mise run playbook -- <playbook> <action> <inventory> [ansible-args...]
 ```
 
-For direct SOPS operations, pass the controller-owned retrieval command to the
-same isolated gateway:
+`ANSIBLE_SOPS_AGE_KEY_CMD` tells Ansible's SOPS plugin how to retrieve the
+controller's private age key instead of calling your Mac's Keychain helper.
+Configure this in the runner's job environment so routine jobs use it
+automatically. You normally do not need this override when running playbooks
+on your Mac.
+
+`/controller/owned/identity-command` is a placeholder for an executable that
+retrieves the controller's private key from its protected credential storage
+and writes it to standard output for SOPS to consume. It is not a path to a
+private-key file. The controller's public recipient must also be added to the
+authorized files through the [recipient procedure](#change-recipients); setting
+the command alone does not grant decryption access.
+
+For a direct SOPS operation using the controller's identity, use:
 
 ```bash
 SOPS_AGE_KEY_CMD=/controller/owned/identity-command \
   mise run secrets:sops -- <sops-args...>
 ```
 
-The repository does not require a network secret service or a plaintext
-identity file.
+`SOPS_AGE_KEY_CMD` configures SOPS itself. Use it for a controller-side maintenance
+operation, such as editing an encrypted file or updating its recipients. This
+command does not run a playbook. Routine Semaphore playbook jobs use the Ansible
+setting above and do not need a separate direct SOPS command.
+
+In these examples, each environment override applies only to the command it
+prefixes. On your Mac, normal `mise run playbook` and `mise run secrets:sops`
+commands already select the repository Keychain helper automatically.
+
+The controller's credential storage and retrieval program are chosen during
+controller setup. The repository does not require a network secret service or
+a plaintext identity file.
 
 ## Change recipients
 
