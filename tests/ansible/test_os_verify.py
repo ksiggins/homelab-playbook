@@ -161,8 +161,7 @@ class StandaloneOsVerifyTests(unittest.TestCase):
 
         self.assertIn("`verify.yml`", readme)
         self.assertIn(
-            "mise run playbook -- os verify production --limit nuc4 "
-            "--ask-vault-pass",
+            "mise run playbook -- os verify production --limit nuc4",
             guide,
         )
 

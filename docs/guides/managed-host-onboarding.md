@@ -241,7 +241,7 @@ After successful provisioning, use standalone verification when an operator
 needs a later read-only drift check. For `nuc4`:
 
 ```bash
-mise run playbook -- os verify production --limit nuc4 --ask-vault-pass
+mise run playbook -- os verify production --limit nuc4
 ```
 
 This operation rechecks the connection and passwordless-sudo path, gathers

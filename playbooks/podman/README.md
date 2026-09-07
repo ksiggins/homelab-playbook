@@ -86,7 +86,7 @@ data or renumber identities to bypass that check.
 Changing established IDs or ranges requires a reviewed migration with stopped
 workloads and backups that preserve numeric ownership. Removing a declaration
 does not remove its account, mappings, or data; retirement and ID reuse are
-separate actions. Keep the external controller, Git checkout, Vault access, and
+separate actions. Keep the external controller, Git checkout, SOPS identity access, and
 console or rescue path available independently of services on this host.
 
 ## Development evidence

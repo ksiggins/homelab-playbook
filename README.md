@@ -45,14 +45,14 @@ Execute against production or staging only with explicit operator direction.
 These commands target Debian 13 and Rocky Linux 9 hosts in `os_managed`.
 The examples select the current production host, `nuc4`. Complete the
 [managed host onboarding guide](docs/guides/managed-host-onboarding.md) first
-for manual host preparation, SSH access, inventory, and Vault setup.
+for manual host preparation, SSH access, inventory, and secret setup.
 
 | Command | Purpose |
 | --- | --- |
-| `mise run playbook -- os inspect production --limit nuc4 --ask-vault-pass` | Read a basic OS fact snapshot. |
-| `mise run playbook -- os provision production --limit nuc4 --ask-vault-pass` | Perform a full update, reconcile the complete baseline, reboot if needed, and verify. |
-| `mise run playbook -- os maintain production --limit nuc4 --ask-vault-pass` | Perform a later full package update, reboot if needed, and verify without reapplying configuration. |
-| `mise run playbook -- os verify production --limit nuc4 --ask-vault-pass` | Check the complete effective baseline without changes. |
+| `mise run playbook -- os inspect production --limit nuc4` | Read a basic OS fact snapshot. |
+| `mise run playbook -- os provision production --limit nuc4` | Perform a full update, reconcile the complete baseline, reboot if needed, and verify. |
+| `mise run playbook -- os maintain production --limit nuc4` | Perform a later full package update, reboot if needed, and verify without reapplying configuration. |
+| `mise run playbook -- os verify production --limit nuc4` | Check the complete effective baseline without changes. |
 
 Provisioning and maintenance include verification. Use standalone verification
 at any time to check for drift; use provisioning to reconcile it. A successful
@@ -66,13 +66,15 @@ and validation boundaries.
 ### Podman foundation commands
 
 Run these after establishing the OS baseline. They target `podman_hosts`;
-`nuc4` is the current production member. Inventory parsing still requires the
-OS Vault password even though the foundation does not consume secret values.
+`nuc4` is the current production member. Ansible loads encrypted inventory
+through SOPS and the configured macOS Keychain helper; no extra secret flag is
+needed. Complete the [SOPS setup](docs/guides/sops-secrets.md) on the operator
+workstation before running playbooks.
 
 | Command | Purpose |
 | --- | --- |
-| `mise run playbook -- podman provision production --limit nuc4 --ask-vault-pass` | Install Podman prerequisites, reconcile declared service accounts and directories, and verify. |
-| `mise run playbook -- podman verify production --limit nuc4 --ask-vault-pass` | Check installed capability, declared identities, permissions, and user-manager state without changes. |
+| `mise run playbook -- podman provision production --limit nuc4` | Install Podman prerequisites, reconcile declared service accounts and directories, and verify. |
+| `mise run playbook -- podman verify production --limit nuc4` | Check installed capability, declared identities, permissions, and user-manager state without changes. |
 
 Provisioning includes verification. Standalone verification is useful for later
 drift checks, including after OS maintenance. Both verifiers stop at the first

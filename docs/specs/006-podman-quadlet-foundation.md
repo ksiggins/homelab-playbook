@@ -168,9 +168,9 @@ or host-wide privileged-port exceptions.
 
 Quadlet files contain no secrets. Mode `0640` is defense in depth, not a
 secret-storage mechanism. Future service work chooses its credential delivery
-mechanism under the repository's current Ansible Vault boundary. This issue
+mechanism under the repository's current SOPS and age boundary. This issue
 does not introduce secret payloads, change encryption systems, or inspect
-production Vault values.
+protected inventory values.
 
 Root ownership protects the installed definitions from ordinary writes by the
 service identity. It does not claim to prevent a compromised service account
