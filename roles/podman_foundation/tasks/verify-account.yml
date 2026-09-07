@@ -1,0 +1,124 @@
+---
+- name: Observe private service home
+  ansible.builtin.stat:
+    path: "/var/lib/{{ podman_foundation_account.name }}"
+    follow: false
+  register: podman_foundation_home
+
+- name: Observe administrator-owned service definition directory
+  ansible.builtin.stat:
+    path: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}"
+    follow: false
+  register: podman_foundation_quadlet_directory
+
+- name: Verify directory ownership and permissions
+  ansible.builtin.assert:
+    that:
+      - podman_foundation_home.stat.isdir | default(false)
+      - not podman_foundation_home.stat.islnk | default(true)
+      - podman_foundation_home.stat.uid == podman_foundation_account.uid
+      - podman_foundation_home.stat.gid == podman_foundation_account.gid
+      - podman_foundation_home.stat.mode == '0700'
+      - podman_foundation_quadlet_directory.stat.isdir | default(false)
+      - not podman_foundation_quadlet_directory.stat.islnk | default(true)
+      - podman_foundation_quadlet_directory.stat.uid == 0
+      - podman_foundation_quadlet_directory.stat.gid == podman_foundation_account.gid
+      - podman_foundation_quadlet_directory.stat.mode == '0750'
+    fail_msg: Service account filesystem ownership or permissions have drifted
+
+- name: Read service password lock status without reading password values
+  ansible.builtin.command:
+    argv: [/usr/bin/passwd, -S, "{{ podman_foundation_account.name }}"]
+  register: podman_foundation_password_status
+  changed_when: false
+  check_mode: false
+
+- name: Verify locked service password
+  ansible.builtin.assert:
+    that: podman_foundation_password_status.stdout.split()[1] in ['L', 'LK']
+    fail_msg: Service account password is not locked
+
+- name: Observe service user manager boot persistence
+  ansible.builtin.command:
+    argv: [/usr/bin/loginctl, show-user, "{{ podman_foundation_account.name }}", --property=Linger, --value]
+  register: podman_foundation_linger
+  changed_when: false
+  check_mode: false
+
+- name: Verify service user manager boot persistence
+  ansible.builtin.assert:
+    that: podman_foundation_linger.stdout | trim == 'yes'
+    fail_msg: Service user manager lingering is not enabled
+
+- name: Verify service user manager is active
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, "user@{{ podman_foundation_account.uid }}.service"]
+  changed_when: false
+  check_mode: false
+
+- name: Inspect all administrator-managed account definitions
+  ansible.builtin.find:
+    paths: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}"
+    recurse: true
+    hidden: true
+    file_type: any
+    follow: false
+  register: podman_foundation_definition_files
+
+- name: Verify account definition ownership and modes
+  ansible.builtin.assert:
+    that:
+      - not item.islnk
+      - item.isdir or item.isreg
+      - item.uid == 0
+      - item.gid == podman_foundation_account.gid
+      - item.mode == ('0750' if item.isdir else '0640')
+    fail_msg: Administrator-owned service definitions have unsafe ownership or permissions
+  loop: "{{ podman_foundation_definition_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Read recorded identity declaration
+  ansible.builtin.slurp:
+    src: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}/.foundation-account.json"
+  register: podman_foundation_verified_record
+
+- name: Verify stable recorded allocation
+  ansible.builtin.assert:
+    that: podman_foundation_verified_record.content | b64decode | from_json == podman_foundation_account
+    fail_msg: Recorded foundation identity differs from declared allocation
+
+- name: Inspect service SSH authorization files
+  ansible.builtin.stat:
+    path: "/var/lib/{{ podman_foundation_account.name }}/.ssh/{{ item }}"
+  loop: [authorized_keys, authorized_keys2]
+  register: podman_foundation_service_keys
+
+- name: Verify service accounts have no SSH authorization files
+  ansible.builtin.assert:
+    that: not item.stat.exists
+    fail_msg: Service account must not contain SSH authorization files
+  loop: "{{ podman_foundation_service_keys.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Observe effective service sudo authorization
+  environment:
+    LC_ALL: C
+  ansible.builtin.command:
+    argv: [/usr/bin/sudo, -n, -l, -U, "{{ podman_foundation_account.name }}"]
+  register: podman_foundation_sudo
+  changed_when: false
+  check_mode: false
+  failed_when: podman_foundation_sudo.rc not in [0, 1]
+  no_log: true
+
+- name: Verify service account has no sudo authorization
+  ansible.builtin.assert:
+    that:
+      # A privileged list query may succeed while reporting that the subject has no grants.
+      - podman_foundation_sudo.rc in [0, 1]
+      - >-
+        podman_foundation_sudo.stdout | trim is match(
+          '^User ' ~ podman_foundation_account.name ~ ' is not allowed to run sudo on [^\n]+\.$')
+    fail_msg: Service sudo denial could not be proven; inspect host sudo policy

@@ -64,9 +64,9 @@ inventory_path="$repo_root/inventory/$inventory"
 
 shift 3
 
-guarded_os_action=false
-if [[ "$playbook" == 'os' && "$action" != 'inspect' ]]; then
-  guarded_os_action=true
+guarded_host_action=false
+if [[ ( "$playbook" == 'os' && "$action" != 'inspect' ) || "$playbook" == 'podman' ]]; then
+  guarded_host_action=true
   for argument in "$@"; do
     case "$argument" in
       -k|-K|--ask-pass|--ask-become-pass|--step|\
@@ -76,7 +76,7 @@ if [[ "$playbook" == 'os' && "$action" != 'inspect' ]]; then
       --connection-password-file=*|--conn-pass-file=*|\
       --become-password-file=*|--become-pass-file=*|\
       --start-at-task=*|-t?*|--tags=*|--skip-tags=*)
-        error "password credentials and task-selection controls are not allowed for mutating OS actions"
+        error "password credentials and task-selection controls are not allowed for guarded host actions"
         ;;
     esac
   done
@@ -84,7 +84,7 @@ fi
 
 uv run --frozen --no-sync python scripts/dependencies.py verify
 
-if [[ "$guarded_os_action" == true ]]; then
+if [[ "$guarded_host_action" == true ]]; then
   effective_config="$(
     uv run --frozen --no-sync ansible-config dump --only-changed
   )"
@@ -96,7 +96,7 @@ if [[ "$guarded_os_action" == true ]]; then
       BECOME_PASSWORD_FILE*|\
       TAGS_RUN*|\
       TAGS_SKIP*)
-        error "effective Ansible configuration enables password credentials or task selection for a mutating OS action"
+        error "effective Ansible configuration enables password credentials or task selection for a guarded host action"
         ;;
     esac
   done <<<"$effective_config"

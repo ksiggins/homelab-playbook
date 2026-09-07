@@ -2,6 +2,8 @@
 
 ## Guides
 
+- [Podman foundation](guides/podman-foundation.md) — Provision and verify
+  reusable rootless service identities and Quadlet host capability.
 - [GitHub main protection](guides/github-main-protection.md) — Inspect, verify,
   and recover the repository's protected-branch settings.
 - [Managed host onboarding](guides/managed-host-onboarding.md) — Prepare,
@@ -30,3 +32,6 @@
 - [005 — SOPS and age inventory secrets](specs/005-sops-age-secrets.md) —
   Defines the one-way migration from Ansible Vault and the current secret
   loading, identity, recovery, and validation contract.
+- [006 — Podman and Quadlet foundation](specs/006-podman-quadlet-foundation.md) —
+  Defines separate service-account ownership, stable identity allocations, and
+  reusable rootless container conventions without deploying applications.

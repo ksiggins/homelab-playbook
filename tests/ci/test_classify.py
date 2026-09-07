@@ -165,6 +165,9 @@ class PathClassificationTests(unittest.TestCase):
             "roles/system_maintenance/molecule/default/molecule.yml": "molecule",
             "roles/system_maintenance/molecule/baseline/molecule.yml": "molecule",
             "playbooks/os/provision.yml": "molecule",
+            "playbooks/podman/provision.yml": "molecule",
+            "playbooks/podman/verify.yml": "molecule",
+            "roles/podman_foundation/filter_plugins/identity.py": "molecule",
             "playbooks/os/maintain.yml": "molecule",
             "roles/update_pihole/tasks/main.yml": "ansible",
         }

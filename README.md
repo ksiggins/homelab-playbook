@@ -54,6 +54,16 @@ The active production inventory contains `nuc4` as the first managed-host
 example. Native daily security updates remain separate from explicit full
 maintenance, and no host-local recurring full-update scheduler exists.
 
+### Podman foundation operations
+
+The [Podman foundation guide](docs/guides/podman-foundation.md) describes
+`podman provision` and observational `podman verify`. The foundation prepares
+official distribution Podman capability and reusable service-account ownership.
+`nuc4` belongs to `podman_hosts`, with no service accounts declared yet.
+Later application initiatives add their own accounts, state, and secret-free
+Quadlets. Standalone `os verify` checks the existing OS baseline at any time;
+OS provisioning and maintenance retain their included verification.
+
 ## Inventories
 
 Select one of these inventory arguments:

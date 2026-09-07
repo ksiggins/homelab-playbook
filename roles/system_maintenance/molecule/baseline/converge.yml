@@ -69,3 +69,35 @@
       local_address: 127.0.0.1
       local_port: 22
     system_maintenance_native_reboot_enabled: false
+
+- name: Converge synthetic Podman foundation identities
+  hosts: os_managed
+  gather_facts: true
+  become: true
+  vars_files:
+    - vars/podman.yml
+  tasks:
+    - name: Reserve unrelated synthetic subordinate allocations
+      ansible.builtin.lineinfile:
+        path: "/etc/sub{{ item }}"
+        line: svc-fixture-unmanaged:500000:65536
+        create: true
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [uid, gid]
+
+    - name: Reconcile the reusable Podman foundation
+      ansible.builtin.import_role:
+        name: podman_foundation
+
+    - name: Install a secret-free Quadlet generator fixture without startup targets
+      ansible.builtin.copy:
+        dest: /etc/containers/systemd/users/2001/foundation-fixture.container
+        owner: root
+        group: svc-fixture-a
+        mode: '0640'
+        content: |
+          [Container]
+          Image=docker.io/library/alpine:3.22.1
+          Exec=/bin/true

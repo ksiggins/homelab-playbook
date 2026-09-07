@@ -143,11 +143,14 @@ for unsafe_args in \
   '--step'; do
   : >"$uv_log"
   read -r -a unsafe_argv <<<"$unsafe_args"
-  assert_status 2 env \
+  for guarded_selector in 'os maintain' 'os verify' 'podman provision' 'podman verify'; do
+    read -r -a guarded_argv <<<"$guarded_selector"
+    assert_status 2 env \
     PATH="$fake_bin:$PATH" \
     FAKE_UV_LOG="$uv_log" \
     "$repo_root/scripts/playbook.sh" \
-    os maintain production "${unsafe_argv[@]}"
+    "${guarded_argv[@]}" production "${unsafe_argv[@]}"
+  done
   [[ ! -s "$uv_log" ]] || fail "unsafe OS argument invoked uv: $unsafe_args"
 done
 

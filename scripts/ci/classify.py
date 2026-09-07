@@ -96,6 +96,8 @@ def classify_path(path: str) -> tuple[str, str]:
         path,
         (
             "playbooks/os/",
+            "playbooks/podman/",
+            "roles/podman_foundation/",
             "roles/os_baseline_verify/",
             "roles/os_bootstrap/",
             "roles/security_baseline/",

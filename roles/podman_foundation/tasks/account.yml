@@ -1,0 +1,128 @@
+---
+- name: Repeat identity and filesystem preconditions before account mutation
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Inspect declared account ownership boundaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "/var/lib/{{ podman_foundation_account.name }}"
+    - "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}"
+    - "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}/.foundation-account.json"
+  register: podman_foundation_account_paths
+
+- name: Determine whether this account already exists
+  ansible.builtin.set_fact:
+    podman_foundation_account_exists: >-
+      {{ podman_foundation_passwd.stdout_lines | select('match', '^' ~ podman_foundation_account.name ~ ':') | list | length > 0 }}
+
+- name: Reject unrelated account or filesystem takeover
+  ansible.builtin.assert:
+    that:
+      - >-
+        not podman_foundation_account_exists or
+        (podman_foundation_account_paths.results[2].stat.exists and
+         podman_foundation_account_paths.results[2].stat.isreg | default(false) and
+         podman_foundation_account_paths.results[2].stat.uid | default(-1) == 0)
+      - >-
+        podman_foundation_account_exists or
+        not (podman_foundation_account_paths.results | selectattr('stat.exists') | list | length > 0)
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.uid == (podman_foundation_account.uid if item.item.startswith('/var/lib/') else 0)
+    fail_msg: Existing account or filesystem needs operator migration review; no takeover is permitted
+  loop: "{{ podman_foundation_account_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verify existing foundation ownership record
+  ansible.builtin.slurp:
+    src: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}/.foundation-account.json"
+  register: podman_foundation_record
+  when: podman_foundation_account_exists
+
+- name: Reject changes to established identity allocations
+  ansible.builtin.assert:
+    that: podman_foundation_record.content | b64decode | from_json == podman_foundation_account
+    fail_msg: Existing foundation identity differs; use an operator-reviewed migration
+  when: podman_foundation_account_exists
+
+- name: Create private primary group for a new service account
+  ansible.builtin.group:
+    name: "{{ podman_foundation_account.name }}"
+    gid: "{{ podman_foundation_account.gid }}"
+    system: true
+  when: not podman_foundation_account_exists
+
+- name: Record this run's new account transaction
+  ansible.builtin.set_fact:
+    podman_foundation_pending: "{{ [podman_foundation_account.name] if not podman_foundation_account_exists else [] }}"
+
+- name: Repeat current identity checks before user creation
+  ansible.builtin.import_tasks: identity-state.yml
+
+- name: Create locked service account without automatic subordinate allocation
+  ansible.builtin.user:
+    name: "{{ podman_foundation_account.name }}"
+    uid: "{{ podman_foundation_account.uid }}"
+    group: "{{ podman_foundation_account.name }}"
+    home: "/var/lib/{{ podman_foundation_account.name }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+    password_lock: true
+  when: not podman_foundation_account_exists
+
+- name: Repeat identity checks before subordinate mapping changes
+  ansible.builtin.import_tasks: identity-state.yml
+
+- name: Install exact subordinate ranges for the new account
+  ansible.builtin.lineinfile:
+    path: "/etc/sub{{ item }}"
+    line: >-
+      {{ podman_foundation_account.name }}:{{ podman_foundation_account['sub' ~ item ~ '_start'] }}:{{
+      podman_foundation_account['sub' ~ item ~ '_count'] }}
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [uid, gid]
+  when: not podman_foundation_account_exists
+
+- name: Complete new identity transaction
+  ansible.builtin.set_fact:
+    podman_foundation_pending: []
+
+- name: Set private service home permissions
+  ansible.builtin.file:
+    path: "/var/lib/{{ podman_foundation_account.name }}"
+    state: directory
+    owner: "{{ podman_foundation_account.name }}"
+    group: "{{ podman_foundation_account.name }}"
+    mode: '0700'
+
+- name: Create account-scoped administrator-owned Quadlet directory
+  ansible.builtin.file:
+    path: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}"
+    state: directory
+    owner: root
+    group: "{{ podman_foundation_account.name }}"
+    mode: '0750'
+
+- name: Record foundation ownership and stable identity allocation
+  ansible.builtin.copy:
+    content: "{{ podman_foundation_account | to_nice_json }}\n"
+    dest: "/etc/containers/systemd/users/{{ podman_foundation_account.uid }}/.foundation-account.json"
+    owner: root
+    group: "{{ podman_foundation_account.name }}"
+    mode: '0640'
+
+- name: Enable boot persistence for the declared service user manager
+  ansible.builtin.command:
+    argv: [/usr/bin/loginctl, enable-linger, "{{ podman_foundation_account.name }}"]
+    creates: "/var/lib/systemd/linger/{{ podman_foundation_account.name }}"
+
+- name: Start the declared user manager through systemd
+  ansible.builtin.systemd_service:
+    name: "user@{{ podman_foundation_account.uid }}.service"
+    state: started

@@ -1,0 +1,28 @@
+---
+- name: Observe foundation preconditions and required identities
+  ansible.builtin.import_tasks: preflight.yml
+  vars:
+    podman_foundation_require_present: true
+    podman_foundation_pending: []
+
+- name: Verify installed Podman capability
+  ansible.builtin.import_tasks: capability.yml
+
+- name: Verify shared Quadlet directories exist with administrator ownership
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.gid | default(-1) == 0
+      - item.stat.mode | default('') == '0755'
+    fail_msg: Shared Quadlet directories are missing or have drifted
+  loop: "{{ podman_foundation_boundaries.results[2:5] }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verify each declared account without mutation
+  ansible.builtin.include_tasks: verify-account.yml
+  loop: "{{ podman_foundation_accounts }}"
+  loop_control:
+    loop_var: podman_foundation_account
+    label: "{{ podman_foundation_account.name }}"

@@ -1,0 +1,36 @@
+---
+- name: Validate foundation preconditions
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Install distribution Podman and rootless prerequisites
+  ansible.builtin.package:
+    name: >-
+      {{ ['podman', 'uidmap', 'passt', 'dbus-user-session', 'acl']
+         if ansible_facts['os_family'] == 'Debian'
+         else ['podman', 'shadow-utils', 'passt', 'dbus-daemon', 'acl'] }}
+    state: present
+
+- name: Verify installed foundation capability
+  ansible.builtin.import_tasks: capability.yml
+
+- name: Create administrator-owned Quadlet parent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/containers
+    - /etc/containers/systemd
+    - /etc/containers/systemd/users
+
+- name: Establish declared service identities
+  ansible.builtin.include_tasks: account.yml
+  loop: "{{ podman_foundation_accounts }}"
+  loop_control:
+    loop_var: podman_foundation_account
+    label: "{{ podman_foundation_account.name }}"
+
+- name: Verify reconciled foundation
+  ansible.builtin.import_tasks: verify.yml
