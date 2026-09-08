@@ -38,6 +38,10 @@ run = "./scripts/ci/validate-ansible.sh"
 description = "Test SOPS inventory loading with disposable identities"
 run = "uv run --frozen --no-sync python -m unittest discover -s tests/secrets -p 'test_*.py' -v"
 
+[tasks."test:tls"]
+description = "Test TLS policy, publication and local TLS with disposable certificates"
+run = "uv run --frozen --no-sync python -m unittest discover -s tests/tls -p 'test_*.py' -v"
+
 [tasks."validate:secrets"]
 description = "Validate encrypted inventory structure without decryption"
 run = "uv run --frozen --no-sync python scripts/secrets/validate.py"

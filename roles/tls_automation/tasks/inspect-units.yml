@@ -1,0 +1,74 @@
+---
+- name: Read authoritative effective TLS unit properties
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - show
+      - --all
+      - "{{ item.name }}"
+      - --property=LoadState
+      - --property=FragmentPath
+      - --property=DropInPaths
+      - --property=User
+      - --property=Group
+      - --property=SupplementaryGroups
+      - --property=Type
+      - --property=ExecStart
+      - --property=NoNewPrivileges
+      - --property=ProtectSystem
+      - --property=PrivateTmp
+      - --property=ReadWritePaths
+      - --property=TimeoutStartUSec
+      - --property=Unit
+      - --property=Persistent
+      - --property=RandomizedDelayUSec
+      - --property=TimersCalendar
+  loop:
+    - {name: homelab-tls-issuer.service}
+    - {name: homelab-tls-renew.service}
+    - {name: homelab-tls-renew.timer}
+  register: tls_automation_unit_properties
+  changed_when: false
+  check_mode: false
+
+# systemctl omits empty Exec arrays and cannot print LoadCredential's a(ss).
+# Query the exact typed properties; missing or unsupported properties fail.
+- name: Read typed execution and credential arrays for loaded TLS services
+  ansible.builtin.command:
+    argv: "{{ item.name | tls_automation_service_array_query }}"
+  loop:
+    - {name: homelab-tls-issuer.service}
+    - {name: homelab-tls-renew.service}
+  when: >-
+    'LoadState=loaded' in
+    (tls_automation_unit_properties.results | selectattr('item.name', 'equalto', item.name) | first).stdout_lines
+  register: tls_automation_service_arrays
+  changed_when: false
+  check_mode: false
+
+- name: Search effective system unit files for templated TLS units
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, list-unit-files, --no-legend, --no-pager]
+  register: tls_automation_unit_file_instances
+  changed_when: false
+  check_mode: false
+
+- name: Search loaded systemd state for templated TLS units
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, list-units, --all, --plain, --no-legend, --no-pager]
+  register: tls_automation_loaded_unit_instances
+  changed_when: false
+  check_mode: false
+
+- name: Reject templated TLS unit instances
+  ansible.builtin.assert:
+    that:
+      - >-
+        tls_automation_unit_file_instances.stdout_lines
+        | map('trim') | select('match', '^homelab-tls-(issuer@[^ ]*[.]service|renew@[^ ]*[.](service|timer))[ \t]')
+        | list | length == 0
+      - >-
+        tls_automation_loaded_unit_instances.stdout_lines
+        | map('trim') | select('match', '^homelab-tls-(issuer@[^ ]*[.]service|renew@[^ ]*[.](service|timer))[ \t]')
+        | list | length == 0
+    fail_msg: Templated TLS unit instances are not permitted

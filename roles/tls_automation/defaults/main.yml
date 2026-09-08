@@ -1,0 +1,8 @@
+---
+tls_automation_namespace: null
+tls_automation_email: null
+tls_automation_reader_gid: null
+tls_automation_endpoints: []
+tls_automation_issuer_uid: null
+tls_automation_issuer_gid: null
+tls_automation_timer_enabled: false

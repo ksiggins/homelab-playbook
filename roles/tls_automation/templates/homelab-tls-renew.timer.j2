@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule off-cluster TLS reconciliation
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=1h
+Persistent=true
+Unit=homelab-tls-renew.service
+
+[Install]
+WantedBy=timers.target

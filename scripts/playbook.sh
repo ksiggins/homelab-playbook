@@ -45,6 +45,10 @@ playbook_path="$playbook_dir/$action.yml"
 [[ -f "$playbook_path" ]] || error "unknown action for $playbook: $action"
 
 if [[ $# -eq 2 ]]; then
+  if [[ "$playbook" == 'tls' ]]; then
+    printf '%s\n' 'Available inventories:' 'production'
+    exit 0
+  fi
   cat <<'EOF'
 Available inventories:
 production
@@ -59,13 +63,16 @@ case "$inventory" in
   production|staging|frozen/k3s) ;;
   *) error "unknown inventory: $inventory" ;;
 esac
+if [[ "$playbook" == 'tls' && "$inventory" != 'production' ]]; then
+  error "TLS currently supports production only; staging experiments require a separate isolated workflow"
+fi
 inventory_path="$repo_root/inventory/$inventory"
 [[ -f "$inventory_path" || -d "$inventory_path" ]] || error "inventory is unavailable: $inventory"
 
 shift 3
 
 guarded_host_action=false
-if [[ ( "$playbook" == 'os' && "$action" != 'inspect' ) || "$playbook" == 'podman' ]]; then
+if [[ ( "$playbook" == 'os' && "$action" != 'inspect' ) || "$playbook" == 'podman' || "$playbook" == 'tls' ]]; then
   guarded_host_action=true
   for argument in "$@"; do
     case "$argument" in

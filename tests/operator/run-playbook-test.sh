@@ -84,6 +84,14 @@ assert_status 2 "$repo_root/scripts/playbook.sh" pihole unknown
 assert_status 2 "$repo_root/scripts/playbook.sh" pihole update unknown
 [[ ! -s "$uv_log" ]] || fail 'unknown inventory invoked uv'
 
+for tls_action in provision renew verify; do
+  for unsupported_inventory in staging frozen/k3s; do
+    assert_status 2 env PATH="$fake_bin:$PATH" FAKE_UV_LOG="$uv_log" \
+      "$repo_root/scripts/playbook.sh" tls "$tls_action" "$unsupported_inventory"
+    [[ ! -s "$uv_log" ]] || fail 'unsupported TLS inventory invoked uv'
+  done
+done
+
 (cd "$test_root/outside" && \
   PATH="$fake_bin:$PATH" FAKE_MISE_LOG="$mise_log" \
   FAKE_MISE_CWD_LOG="$mise_cwd_log" \
@@ -143,7 +151,8 @@ for unsafe_args in \
   '--step'; do
   : >"$uv_log"
   read -r -a unsafe_argv <<<"$unsafe_args"
-  for guarded_selector in 'os maintain' 'os verify' 'podman provision' 'podman verify'; do
+  for guarded_selector in 'os maintain' 'os verify' 'podman provision' 'podman verify' \
+    'tls provision' 'tls renew' 'tls verify'; do
     read -r -a guarded_argv <<<"$guarded_selector"
     assert_status 2 env \
     PATH="$fake_bin:$PATH" \

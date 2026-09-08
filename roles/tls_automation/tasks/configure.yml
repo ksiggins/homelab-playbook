@@ -1,0 +1,67 @@
+---
+- name: Install strict public TLS policy
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: /etc/homelab-tls/config.json
+    owner: root
+    group: svc-acme
+    mode: '0640'
+
+- name: Install optional Cloudflare credential source
+  ansible.builtin.copy:
+    content: "{{ tls_automation_cloudflare_token }}\n"
+    dest: /etc/homelab-tls/cloudflare-token
+    owner: root
+    group: root
+    mode: '0600'
+  when: tls_automation_cloudflare_token is defined
+  no_log: true
+  diff: false
+
+- name: Inspect Cloudflare credential metadata
+  ansible.builtin.stat:
+    path: /etc/homelab-tls/cloudflare-token
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: tls_automation_credential
+  no_log: true
+
+- name: Verify Cloudflare credential metadata when present
+  ansible.builtin.assert:
+    that:
+      - not tls_automation_credential.stat.exists or not tls_automation_credential.stat.islnk
+      - not tls_automation_credential.stat.exists or tls_automation_credential.stat.isreg
+      - not tls_automation_credential.stat.exists or tls_automation_credential.stat.uid == 0
+      - not tls_automation_credential.stat.exists or tls_automation_credential.stat.gid == 0
+      - not tls_automation_credential.stat.exists or tls_automation_credential.stat.mode == '0600'
+      - not tls_automation_credential.stat.exists or tls_automation_credential.stat.nlink == 1
+    fail_msg: Cloudflare credential metadata is unsafe
+  no_log: true
+
+- name: Install fixed TLS systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - homelab-tls-issuer.service
+    - homelab-tls-renew.service
+    - homelab-tls-renew.timer
+
+- name: Reload systemd after TLS unit installation
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  changed_when: false
+
+- name: Inspect effective TLS units after reload
+  ansible.builtin.import_tasks: inspect-units.yml
+
+- name: Require installed effective TLS units to remain fixed
+  ansible.builtin.assert:
+    that:
+      - tls_automation_unit_properties.results | tls_automation_validate_units(false, tls_automation_service_arrays.results)
+    fail_msg: Installed TLS units differ from the fixed service contract
