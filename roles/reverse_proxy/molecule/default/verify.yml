@@ -388,7 +388,7 @@
             (reverse_proxy_molecule_after_failures.stdout | from_json).body
             == 'fixture host=app.example.test path=/\n'
 
-    - name: Start a WebSocket session across forced certificate reload
+    - name: Start a WebSocket session across certificate refresh
       ansible.builtin.command:
         argv: >-
           {{ reverse_proxy_molecule_common_probe
@@ -400,7 +400,7 @@
       register: reverse_proxy_molecule_reload_session_job
       changed_when: false
 
-    - name: Wait for the certificate-reload WebSocket session
+    - name: Wait for the certificate-refresh WebSocket session
       ansible.builtin.wait_for:
         path: /tmp/ws-reload-ready
         state: present
@@ -422,7 +422,7 @@
               Certificate rotation transaction failed:
               {{ reverse_proxy_molecule_rotation.stdout | trim }}
 
-    - name: Release the certificate-reload WebSocket session
+    - name: Release the certificate-refresh WebSocket session
       ansible.builtin.file:
         path: /tmp/ws-reload-continue
         state: touch
@@ -430,7 +430,7 @@
         group: root
         mode: '0600'
 
-    - name: Collect the certificate-reload WebSocket result
+    - name: Collect the certificate-refresh WebSocket result
       ansible.builtin.async_status:
         jid: "{{ reverse_proxy_molecule_reload_session_job.ansible_job_id }}"
       register: reverse_proxy_molecule_reload_session
@@ -438,13 +438,13 @@
       retries: 20
       delay: 1
 
-    - name: Request the route after replacement certificate reload
+    - name: Request the route after replacement certificate refresh
       ansible.builtin.command:
         argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
       register: reverse_proxy_molecule_replacement_https
       changed_when: false
 
-    - name: Assert forced reload replaced TLS and reconnected WebSocket
+    - name: Assert certificate-cache replacement refreshed TLS and WebSocket
       ansible.builtin.assert:
         that:
           - (reverse_proxy_molecule_replacement_https.stdout | from_json).status == 200

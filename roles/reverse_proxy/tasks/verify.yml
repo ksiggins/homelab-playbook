@@ -77,6 +77,7 @@
     - {path: /etc/caddy, kind: directory, owner: root, group: caddy, mode: '0750'}
     - {path: /etc/caddy/tls, kind: directory, owner: root, group: caddy, mode: '0750'}
     - {path: /etc/caddy/Caddyfile, kind: file, owner: root, group: caddy, mode: '0640'}
+    - {path: /etc/caddy/Caddyfile.admin, kind: file, owner: root, group: caddy, mode: '0640'}
     - {path: /etc/caddy/Caddyfile.candidate, kind: file, owner: root, group: caddy, mode: '0640'}
     - {path: /var/lib/caddy, kind: directory, owner: caddy, group: caddy, mode: '0700'}
     - {path: /var/lib/homelab-reverse-proxy, kind: directory, owner: root, group: root, mode: '0700'}

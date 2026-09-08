@@ -98,6 +98,7 @@ class Activator:
         self.ids = ids if ids is not None else identity()
         self.config_dir = self.path("/etc/caddy")
         self.boot = self.config_dir / "Caddyfile"
+        self.admin = self.config_dir / "Caddyfile.admin"
         self.candidate = self.config_dir / "Caddyfile.candidate"
         self.state = self.path("/var/lib/homelab-reverse-proxy")
         self.pending = self.state / "pending"
@@ -135,6 +136,7 @@ class Activator:
         self.metadata(self.config_dir / "tls", stat.S_ISDIR, root_uid, caddy_gid, 0o750)
         self.metadata(self.state, stat.S_ISDIR, root_uid, root_gid, 0o700)
         self.metadata(self.boot, stat.S_ISREG, root_uid, caddy_gid, 0o640)
+        self.metadata(self.admin, stat.S_ISREG, root_uid, caddy_gid, 0o640)
 
     @contextlib.contextmanager
     def locked(self, shared=False, inherited=False):
@@ -205,61 +207,12 @@ class Activator:
     def active(self):
         self.commands.run(["/usr/bin/systemctl", "is-active", "--quiet", "caddy.service"])
 
-    def caddy(self, operation, config, adapter="caddyfile"):
+    def caddy(self, operation, config):
         command = ["/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", operation,
-                   "--config", str(config)]
-        if adapter:
-            command += ["--adapter", adapter]
+                   "--config", str(config), "--adapter", "caddyfile"]
         if operation == "reload":
             command += ["--force", "--address", "unix//run/caddy/admin.sock"]
         return self.commands.run(command)
-
-    def runtime_configuration(self, configuration):
-        runtime = json.loads(json.dumps(configuration))
-        certificates = runtime.get("apps", {}).get("tls", {}).get("certificates", {}).get("load_files", [])
-        runtime_tags = {}
-        for pair in certificates:
-            certificate = pair.get("certificate", "")
-            match = re.fullmatch(
-                r"/etc/caddy/tls/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/current/fullchain\.pem",
-                certificate,
-            )
-            if match is None:
-                continue
-            target = (self.config_dir / "tls" / match.group(1) / "current").resolve(strict=True)
-            external = Path("/") / target.relative_to(self.root)
-            pair["certificate"] = str(external / "fullchain.pem")
-            pair["key"] = str(external / "privkey.pem")
-            suffix = hashlib.sha256(pair["certificate"].encode()).hexdigest()[:16]
-            for tag in pair.get("tags", []):
-                runtime_tags[tag] = tag + "-" + suffix
-            pair["tags"] = [runtime_tags.get(tag, tag) for tag in pair.get("tags", [])]
-        servers = runtime.get("apps", {}).get("http", {}).get("servers", {})
-        for server in servers.values():
-            for policy in server.get("tls_connection_policies", []):
-                selection = policy.get("certificate_selection", {})
-                for field in ("any_tag", "all_tags"):
-                    if field in selection:
-                        selection[field] = [
-                            runtime_tags.get(tag, tag) for tag in selection[field]
-                        ]
-        return runtime
-
-    def reload_configuration(self, configuration):
-        runtime = self.runtime_configuration(configuration)
-        descriptor, name = tempfile.mkstemp(prefix=".runtime-", suffix=".json", dir=self.config_dir)
-        temporary = Path(name)
-        try:
-            with os.fdopen(descriptor, "wb") as output:
-                os.fchown(output.fileno(), self.ids[0], self.ids[3])
-                os.fchmod(output.fileno(), 0o640)
-                output.write(json.dumps(runtime, separators=(",", ":")).encode())
-                output.flush()
-                os.fsync(output.fileno())
-            self.caddy("reload", temporary, adapter=None)
-            return runtime
-        finally:
-            temporary.unlink(missing_ok=True)
 
     def adapted(self, config):
         try:
@@ -305,7 +258,7 @@ class Activator:
         self.active()
         self.socket_metadata()
         active = self.commands.configuration(self.socket)
-        if active != configuration and active != self.runtime_configuration(configuration):
+        if active != configuration:
             raise ActivationError("active configuration differs from committed configuration")
         pid = self.commands.run(["/usr/bin/systemctl", "show", "--property=MainPID", "--value", "caddy.service"]).decode().strip()
         if not pid.isdigit() or int(pid) <= 0:
@@ -456,8 +409,8 @@ class Activator:
             try:
                 self.observed(desired)
             except ActivationError:
-                loaded = self.reload_configuration(desired)
-                self.observed(loaded)
+                self.caddy("reload", self.boot)
+                self.observed(desired)
 
     def recover_pending(self, runtime=False):
         if not self.pending.exists():
@@ -509,8 +462,8 @@ class Activator:
             self.durable_write(self.pending, record, 0o600, self.ids[1])
             try:
                 self.durable_write(self.boot, candidate, 0o640, self.ids[3])
-                loaded = self.reload_configuration(desired)
-                self.observed(loaded)
+                self.caddy("reload", self.boot)
+                self.observed(desired)
                 self.served_tls(desired)
                 self.clear_pending()
             except (ActivationError, OSError) as failure:
@@ -532,11 +485,13 @@ class Activator:
         with self.locked(inherited=inherited):
             self.active()
             if self.pending.exists() or self.pending.is_symlink():
-                raise ActivationError("configuration recovery is required before certificate reload")
+                raise ActivationError("configuration recovery is required before certificate refresh")
             desired = self.validate(self.boot)
+            self.validate(self.admin)
             self.socket_metadata()
-            loaded = self.reload_configuration(desired)
-            self.observed(loaded)
+            self.caddy("reload", self.admin)
+            self.caddy("reload", self.boot)
+            self.observed(desired)
 
     def verify(self, inherited=False):
         with self.locked(shared=True, inherited=inherited):

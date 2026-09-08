@@ -100,9 +100,11 @@ class ActivationFixture(unittest.TestCase):
         self.old = {"admin": {"listen": "unix//run/caddy/admin.sock", "config": {"persist": False}}}
         self.new = dict(self.old, logging={"logs": {"default": {"level": "WARN"}}})
         self.boot = self.root / "etc/caddy/Caddyfile"
+        self.admin = self.root / "etc/caddy/Caddyfile.admin"
         self.candidate = self.root / "etc/caddy/Caddyfile.candidate"
         self.state = self.root / "var/lib/homelab-reverse-proxy"
         self.write(self.boot, json.dumps(self.old))
+        self.write(self.admin, json.dumps(self.old))
         self.write(self.candidate, json.dumps(self.new))
         self.write(self.root / "run/lock/homelab-reverse-proxy.lock", "", 0o600)
         self.socket = socket.socket(socket.AF_UNIX)
@@ -405,16 +407,16 @@ class ActivationTests(ActivationFixture):
             fcntl.flock(descriptor, fcntl.LOCK_EX)
             with mock.patch.object(self.module, "INHERITED_LOCK_FD", descriptor, create=True):
                 self.activation.reload(inherited=True)
-            self.assertEqual(self.commands.reloads, 1)
+            self.assertEqual(self.commands.reloads, 2)
             with self.assertRaises(BlockingIOError):
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
         finally:
             os.close(probe)
             os.close(descriptor)
 
-    def test_reload_forces_unchanged_configuration(self):
+    def test_reload_cycles_through_admin_only_configuration(self):
         self.activation.reload()
-        self.assertEqual(self.commands.reloads, 1)
+        self.assertEqual(self.commands.reloads, 2)
         self.assertEqual(self.commands.loaded, self.old)
 
     def test_unexpected_caddy_listener_fails_verification(self):
@@ -492,7 +494,7 @@ class CertificateTests(ActivationFixture):
                 self.activation.verify()
         self.assertEqual(self.commands.reloads, 1)
 
-    def test_reload_uses_selected_version_paths_to_refresh_caddy_cache(self):
+    def test_reload_cycles_tls_app_to_refresh_caddy_cache(self):
         base, _ = self.configure_certificate()
         self.activation.apply()
         version = base / "version-two"
@@ -507,19 +509,17 @@ class CertificateTests(ActivationFixture):
 
         pair = self.commands.loaded["apps"]["tls"]["certificates"]["load_files"][0]
         self.assertEqual(
-            "/etc/caddy/tls/app/version-two/fullchain.pem", pair["certificate"]
+            "/etc/caddy/tls/app/current/fullchain.pem", pair["certificate"]
         )
         self.assertEqual(
-            "/etc/caddy/tls/app/version-two/privkey.pem", pair["key"]
+            "/etc/caddy/tls/app/current/privkey.pem", pair["key"]
         )
-        expected_tag = "cert0-" + hashlib.sha256(
-            pair["certificate"].encode()
-        ).hexdigest()[:16]
-        self.assertEqual([expected_tag], pair["tags"])
+        self.assertEqual(["cert0"], pair["tags"])
         policy = self.commands.loaded["apps"]["http"]["servers"]["srv0"][
             "tls_connection_policies"
         ][0]
-        self.assertEqual([expected_tag], policy["certificate_selection"]["any_tag"])
+        self.assertEqual(["cert0"], policy["certificate_selection"]["any_tag"])
+        self.assertEqual(self.commands.reloads, 3)
 
     def test_verify_uses_system_trust_sni_and_current_external_leaf(self):
         self.configure_certificate()

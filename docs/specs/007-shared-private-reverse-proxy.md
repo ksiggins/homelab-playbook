@@ -133,7 +133,7 @@ do not trust client-supplied forwarded headers as a separate upstream proxy.
 
 The Debian 13 package is based on Caddy 2.6.2, which does not implement
 `stream_close_delay`. Use native WebSocket behavior: successful configuration or
-certificate reloads close established WebSockets and clients reconnect. Failed
+certificate refreshes close established WebSockets and clients reconnect. Failed
 configuration validation must preserve existing connections. A removed route
 rejects new connections after reload. Do not add a newer package source merely
 to delay WebSocket closure.
@@ -180,11 +180,12 @@ printing the private key or protected configuration. Issuer account credentials
 never enter Caddy's filesystem or environment.
 
 Configuration and certificate activation share a root-owned host lock. Issue #5
-must hold that lock across version selection, validation, forced reload, and
-post-deployment TLS verification. Its deployment procedure retains the previous
-version and restores the pointer and running certificate after failure. The
-proxy's reload entry point supports use inside this transaction without taking
-the same lock twice. Direct operator reloads acquire the lock themselves.
+must hold that lock across version selection, validation, certificate-cache
+replacement, and post-deployment TLS verification. Its deployment procedure
+retains the previous version and restores the pointer and running certificate
+after failure. The proxy's certificate-refresh entry point supports use inside
+this transaction without taking the same lock twice. Direct operator reloads
+acquire the lock themselves.
 
 The helper is `/usr/local/libexec/homelab-reverse-proxy`; the shared lock is
 `/run/lock/homelab-reverse-proxy.lock`, owned by root with mode `0600`.
@@ -194,21 +195,16 @@ inherited on file descriptor 9. The helper validates that inherited lock;
 the flag alone does not grant execution authority. Certificate automation must
 retain it through version selection, reload, and served-certificate verification.
 
-The reload entry point validates as the service account, then calls
-`caddy reload --force` against the permission-protected Unix admin socket.
-Forced reload is required when certificate bytes change but configuration text
-does not. Before submitting the validated configuration, the helper replaces
-each stable `current` certificate path in the runtime copy with its selected
-immutable version path and gives its matching TLS policy a version-specific
-certificate tag. This makes a version change visible to Caddy's certificate
-cache and prevents the policy from selecting an older cached certificate while
-the committed boot configuration keeps the stable deployment contract. It
-fails if the service is inactive; it does not start a service as an incidental
-certificate-renewal action. Issue #5 owns retries, renewal timing, expiry
+The `reload` entry point validates the committed configuration and a managed
+admin-only configuration as the service account. It loads the admin-only
+configuration to discard the active TLS application and certificate cache, then
+loads the committed configuration from the selected `current` paths. The
+distribution Caddy releases do not reliably replace externally managed
+certificates during a single configuration reload. It fails if the service is
+inactive before the transaction. Issue #5 owns retries, renewal timing, expiry
 monitoring, version retention, and recovery of interrupted certificate
 deployments. Git plus separately recoverable certificate material is sufficient
-to reconstruct the proxy; Caddy cache files are not authoritative recovery
-data.
+to reconstruct the proxy; Caddy cache files are not authoritative recovery data.
 
 ## Configuration activation and failure behavior
 
@@ -296,8 +292,8 @@ only generated text. Disposable Debian 13 and Rocky Linux 9 evidence covers:
   hostname mismatch, while a previously healthy route continues serving.
 - A reload-time failure that passes static validation, disk and runtime
   rollback, interrupted-transaction recovery, and failed initial activation.
-- Forced reload serving a replacement external certificate, ordinary reload
-  reconnecting WebSockets, and unchanged configuration producing no Ansible change.
+- Certificate-cache replacement serving a new external certificate, reconnecting
+  WebSockets, and unchanged configuration producing no Ansible change.
 - Test route removal, eventual stream closure, listener removal for an empty
   route list, and complete run-owned fixture cleanup even after test failure.
 
@@ -329,7 +325,7 @@ dependency.
 - [Caddy systemd deployment](https://caddyserver.com/docs/running) documents
   service ownership, logging, reload, and SELinux installation considerations.
 - [Caddy command line](https://caddyserver.com/docs/command-line) documents
-  validation and forced reload of manually loaded certificates.
+  configuration validation.
 - [Caddy configuration API](https://caddyserver.com/docs/api) documents failed-load
   rollback and permission-protected Unix administration sockets.
 - [Caddy TLS configuration](https://caddyserver.com/docs/caddyfile/directives/tls)

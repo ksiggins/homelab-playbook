@@ -78,6 +78,7 @@
     follow: false
   loop:
     - /etc/caddy/Caddyfile
+    - /etc/caddy/Caddyfile.admin
     - /etc/caddy/Caddyfile.candidate
     - /var/lib/homelab-reverse-proxy/managed
     - /usr/local/libexec/homelab-reverse-proxy
