@@ -290,6 +290,7 @@
         - backend.py
         - diagnose.py
         - probe.py
+        - rotation.py
 
     - name: Install the disposable backend unit
       ansible.builtin.copy:

@@ -20,6 +20,7 @@
         - /usr/local/libexec/reverse-proxy-molecule-backend.py
         - /usr/local/libexec/reverse-proxy-molecule-diagnose.py
         - /usr/local/libexec/reverse-proxy-molecule-probe.py
+        - /usr/local/libexec/reverse-proxy-molecule-rotation.py
 
     - name: Remove disposable certificate data and trust anchors
       ansible.builtin.file:

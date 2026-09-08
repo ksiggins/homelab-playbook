@@ -121,6 +121,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             "backend.py",
             "diagnose.py",
             "probe.py",
+            "rotation.py",
         }
         self.assertEqual(
             required,

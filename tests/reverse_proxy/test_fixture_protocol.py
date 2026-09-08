@@ -4,6 +4,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 import socket
 import ssl
 import subprocess
@@ -23,6 +24,7 @@ SCENARIO_DIRECTORY = (
 BACKEND_PATH = SCENARIO_DIRECTORY / "backend.py"
 PROBE_PATH = SCENARIO_DIRECTORY / "probe.py"
 DIAGNOSE_PATH = SCENARIO_DIRECTORY / "diagnose.py"
+ROTATION_PATH = SCENARIO_DIRECTORY / "rotation.py"
 
 
 def load_backend():
@@ -54,6 +56,17 @@ def load_diagnose():
     return module
 
 
+def load_rotation():
+    spec = importlib.util.spec_from_file_location(
+        "reverse_proxy_rotation", ROTATION_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load {ROTATION_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class FixtureProtocolTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -80,6 +93,67 @@ class FixtureProtocolTests(unittest.TestCase):
         differences = self.diagnose.difference_paths(expected, actual)
 
         self.assertEqual(["$.apps.policies:list-order"], differences)
+
+    def test_rotation_reports_the_original_failed_stage_without_replaying_it(self) -> None:
+        self.assertTrue(ROTATION_PATH.is_file(), "rotation transaction is missing")
+        rotation = load_rotation()
+        with tempfile.TemporaryDirectory() as directory_name:
+            root = Path(directory_name)
+            lock = root / "deployment.lock"
+            lock.touch()
+            versions = root / "fixture"
+            versions.mkdir()
+            (versions / "v2").mkdir()
+            selected = versions / "current"
+            calls = root / "calls"
+            helper = root / "helper.py"
+            helper.write_text(
+                "#!/usr/bin/python3\n"
+                "import fcntl, os, pathlib, sys\n"
+                "lock = pathlib.Path(sys.argv[3])\n"
+                "actual = os.fstat(9)\n"
+                "expected = lock.stat()\n"
+                "if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):\n"
+                "    raise SystemExit(8)\n"
+                "probe = os.open(lock, os.O_RDONLY)\n"
+                "try:\n"
+                "    try:\n"
+                "        fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)\n"
+                "    except BlockingIOError:\n"
+                "        pass\n"
+                "    else:\n"
+                "        raise SystemExit(9)\n"
+                "finally:\n"
+                "    os.close(probe)\n"
+                "calls = pathlib.Path(sys.argv[2])\n"
+                "calls.write_text(calls.read_text() + sys.argv[1] + '\\n')\n"
+                "if sys.argv[1] == 'verify':\n"
+                "    print('served certificate is stale', file=sys.stderr)\n"
+                "    raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+            calls.write_text("", encoding="utf-8")
+
+            report = rotation.rotate(
+                lock_path=lock,
+                selected_path=selected,
+                target="v2",
+                helper_command=[str(helper)],
+                helper_arguments=[str(calls), str(lock)],
+                uid=os.getuid(),
+                gid=os.getgid(),
+            )
+            self.assertEqual(
+                {
+                    "detail": "served certificate is stale",
+                    "result": "failed",
+                    "stage": "verify",
+                },
+                report,
+            )
+            self.assertEqual("v2", os.readlink(selected))
+            self.assertEqual("reload\nverify\n", calls.read_text(encoding="utf-8"))
 
     def test_listener_parser_uses_protocol_and_local_address_columns(self) -> None:
         output = (

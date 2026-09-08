@@ -412,30 +412,15 @@
           ansible.builtin.command:
             argv:
               - /usr/bin/python3
-              - -c
-              - >-
-                import fcntl, grp, os, subprocess;
-                lock=os.open('/run/lock/homelab-reverse-proxy.lock',
-                os.O_RDONLY | os.O_NOFOLLOW);
-                os.dup2(lock, 9) if lock != 9 else None;
-                os.close(lock) if lock != 9 else None;
-                fcntl.flock(9, fcntl.LOCK_EX);
-                selected='/etc/caddy/tls/fixture/current.next';
-                os.symlink('v2', selected);
-                os.lchown(selected, 0, grp.getgrnam('caddy').gr_gid);
-                os.replace(selected, '/etc/caddy/tls/fixture/current');
-                subprocess.run(['/usr/local/libexec/homelab-reverse-proxy',
-                'reload', '--lock-held'], check=True, pass_fds=(9,));
-                subprocess.run(['/usr/local/libexec/homelab-reverse-proxy',
-                'verify', '--lock-held'], check=True, pass_fds=(9,))
+              - /usr/local/libexec/reverse-proxy-molecule-rotation.py
+          register: reverse_proxy_molecule_rotation
           changed_when: true
-          no_log: true
       rescue:
-        - name: Diagnose unexpected certificate rotation failure
-          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
-          vars:
-            reverse_proxy_molecule_diagnostic_action: reload
-            reverse_proxy_molecule_diagnostic_context: Certificate rotation
+        - name: Report the original certificate rotation failure stage
+          ansible.builtin.fail:
+            msg: >-
+              Certificate rotation transaction failed:
+              {{ reverse_proxy_molecule_rotation.stdout | trim }}
 
     - name: Release the certificate-reload WebSocket session
       ansible.builtin.file:
