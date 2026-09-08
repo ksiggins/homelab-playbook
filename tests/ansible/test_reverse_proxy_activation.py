@@ -492,6 +492,27 @@ class CertificateTests(ActivationFixture):
                 self.activation.verify()
         self.assertEqual(self.commands.reloads, 1)
 
+    def test_reload_uses_selected_version_paths_to_refresh_caddy_cache(self):
+        base, _ = self.configure_certificate()
+        self.activation.apply()
+        version = base / "version-two"
+        version.mkdir()
+        version.chmod(0o750)
+        self.write(version / "fullchain.pem", "replacement public fixture")
+        self.write(version / "privkey.pem", "replacement non-key fixture")
+        (base / "current").unlink()
+        (base / "current").symlink_to("version-two")
+
+        self.activation.reload()
+
+        pair = self.commands.loaded["apps"]["tls"]["certificates"]["load_files"][0]
+        self.assertEqual(
+            "/etc/caddy/tls/app/version-two/fullchain.pem", pair["certificate"]
+        )
+        self.assertEqual(
+            "/etc/caddy/tls/app/version-two/privkey.pem", pair["key"]
+        )
+
     def test_verify_uses_system_trust_sni_and_current_external_leaf(self):
         self.configure_certificate()
         self.activation.apply()

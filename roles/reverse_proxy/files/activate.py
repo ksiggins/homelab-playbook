@@ -205,12 +205,47 @@ class Activator:
     def active(self):
         self.commands.run(["/usr/bin/systemctl", "is-active", "--quiet", "caddy.service"])
 
-    def caddy(self, operation, config):
+    def caddy(self, operation, config, adapter="caddyfile"):
         command = ["/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", operation,
-                   "--config", str(config), "--adapter", "caddyfile"]
+                   "--config", str(config)]
+        if adapter:
+            command += ["--adapter", adapter]
         if operation == "reload":
             command += ["--force", "--address", "unix//run/caddy/admin.sock"]
         return self.commands.run(command)
+
+    def runtime_configuration(self, configuration):
+        runtime = json.loads(json.dumps(configuration))
+        certificates = runtime.get("apps", {}).get("tls", {}).get("certificates", {}).get("load_files", [])
+        for pair in certificates:
+            certificate = pair.get("certificate", "")
+            match = re.fullmatch(
+                r"/etc/caddy/tls/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/current/fullchain\.pem",
+                certificate,
+            )
+            if match is None:
+                continue
+            target = (self.config_dir / "tls" / match.group(1) / "current").resolve(strict=True)
+            external = Path("/") / target.relative_to(self.root)
+            pair["certificate"] = str(external / "fullchain.pem")
+            pair["key"] = str(external / "privkey.pem")
+        return runtime
+
+    def reload_configuration(self, configuration):
+        runtime = self.runtime_configuration(configuration)
+        descriptor, name = tempfile.mkstemp(prefix=".runtime-", suffix=".json", dir=self.config_dir)
+        temporary = Path(name)
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                os.fchown(output.fileno(), self.ids[0], self.ids[3])
+                os.fchmod(output.fileno(), 0o640)
+                output.write(json.dumps(runtime, separators=(",", ":")).encode())
+                output.flush()
+                os.fsync(output.fileno())
+            self.caddy("reload", temporary, adapter=None)
+            return runtime
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def adapted(self, config):
         try:
@@ -255,7 +290,8 @@ class Activator:
     def observed(self, configuration):
         self.active()
         self.socket_metadata()
-        if self.commands.configuration(self.socket) != configuration:
+        active = self.commands.configuration(self.socket)
+        if active != configuration and active != self.runtime_configuration(configuration):
             raise ActivationError("active configuration differs from committed configuration")
         pid = self.commands.run(["/usr/bin/systemctl", "show", "--property=MainPID", "--value", "caddy.service"]).decode().strip()
         if not pid.isdigit() or int(pid) <= 0:
@@ -406,8 +442,8 @@ class Activator:
             try:
                 self.observed(desired)
             except ActivationError:
-                self.caddy("reload", self.boot)
-                self.observed(desired)
+                loaded = self.reload_configuration(desired)
+                self.observed(loaded)
 
     def recover_pending(self, runtime=False):
         if not self.pending.exists():
@@ -459,8 +495,8 @@ class Activator:
             self.durable_write(self.pending, record, 0o600, self.ids[1])
             try:
                 self.durable_write(self.boot, candidate, 0o640, self.ids[3])
-                self.caddy("reload", self.boot)
-                self.observed(desired)
+                loaded = self.reload_configuration(desired)
+                self.observed(loaded)
                 self.served_tls(desired)
                 self.clear_pending()
             except (ActivationError, OSError) as failure:
@@ -485,8 +521,8 @@ class Activator:
                 raise ActivationError("configuration recovery is required before certificate reload")
             desired = self.validate(self.boot)
             self.socket_metadata()
-            self.caddy("reload", self.boot)
-            self.observed(desired)
+            loaded = self.reload_configuration(desired)
+            self.observed(loaded)
 
     def verify(self, inherited=False):
         with self.locked(shared=True, inherited=inherited):
