@@ -1,0 +1,296 @@
+---
+- name: Require the supported TLS host boundary
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == '9')
+      - ansible_facts['service_mgr'] == 'systemd'
+      - ansible_facts['architecture'] in ['x86_64', 'aarch64']
+      - ansible_user | default('') == 'ansible'
+      - ansible_password is not defined
+      - ansible_ssh_pass is not defined
+      - ansible_ssh_password is not defined
+      - ansible_become_password is not defined
+      - ansible_become_pass is not defined
+    fail_msg: TLS automation requires a supported systemd host and key-only ansible administration
+
+- name: Assemble fixed TLS policy and issuer declaration
+  ansible.builtin.set_fact:
+    tls_automation_policy:
+      namespace: "{{ tls_automation_namespace }}"
+      email: "{{ tls_automation_email }}"
+      reader_gid: "{{ tls_automation_reader_gid }}"
+      endpoints: "{{ tls_automation_endpoints }}"
+    tls_automation_issuer_account:
+      name: svc-acme
+      uid: "{{ tls_automation_issuer_uid }}"
+      gid: "{{ tls_automation_issuer_gid }}"
+
+- name: Validate strict TLS inputs
+  ansible.builtin.assert:
+    that:
+      - >-
+        tls_automation_policy ==
+        {'namespace': tls_automation_namespace, 'email': tls_automation_email,
+         'reader_gid': tls_automation_reader_gid, 'endpoints': tls_automation_endpoints}
+      - >-
+        tls_automation_issuer_account ==
+        {'name': 'svc-acme', 'uid': tls_automation_issuer_uid, 'gid': tls_automation_issuer_gid}
+      - tls_automation_policy | tls_automation_validate_policy == tls_automation_policy
+      - tls_automation_issuer_uid is integer
+      - tls_automation_issuer_uid is not boolean
+      - tls_automation_issuer_gid is integer
+      - tls_automation_issuer_gid is not boolean
+      - tls_automation_issuer_uid != tls_automation_reader_gid
+      - tls_automation_issuer_gid != tls_automation_reader_gid
+      - tls_automation_timer_enabled is boolean
+      - >-
+        tls_automation_cloudflare_token is not defined or
+        (tls_automation_cloudflare_token is string and tls_automation_cloudflare_token | length > 0)
+      - not tls_automation_timer_enabled or tls_automation_cloudflare_token is defined
+    fail_msg: TLS policy, identity, timer, or credential input is invalid
+  no_log: true
+
+- name: Read effective host users before mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, passwd]
+  register: tls_automation_passwd
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read effective host groups before mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group]
+  register: tls_automation_group
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Resolve issuer identity names and numeric IDs before mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, "{{ item.database }}", "{{ item.key }}"]
+  loop:
+    - {name: user_name, database: passwd, key: svc-acme}
+    - {name: user_uid, database: passwd, key: "{{ tls_automation_issuer_uid }}"}
+    - {name: group_name, database: group, key: svc-acme}
+    - {name: group_gid, database: group, key: "{{ tls_automation_issuer_gid }}"}
+  register: tls_automation_keyed_identity
+  changed_when: false
+  failed_when: tls_automation_keyed_identity.rc not in [0, 2]
+  check_mode: false
+  no_log: true
+
+- name: Require the declared reader group
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group, "{{ tls_automation_reader_gid }}"]
+  register: tls_automation_reader_group
+  changed_when: false
+  check_mode: false
+
+- name: Verify the declared reader group ID
+  ansible.builtin.assert:
+    that:
+      - tls_automation_reader_group.stdout.split(':') | length == 4
+      - tls_automation_reader_group.stdout.split(':')[2] | int == tls_automation_reader_gid
+    fail_msg: The declared TLS reader GID must already exist
+
+- name: Inspect trusted TLS ancestor directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop:
+    - /etc
+    - /etc/systemd
+    - /etc/systemd/system
+    - /usr
+    - /usr/bin
+    - /usr/local
+    - /usr/local/lib
+    - /var
+    - /var/cache
+    - /var/lib
+  register: tls_automation_ancestors
+
+- name: Require trusted TLS ancestor directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - not item.stat.islnk
+      - item.stat.uid == 0
+      - item.stat.mode is match('^0[0-7][0-5][0-5]$')
+    fail_msg: TLS installation requires root-owned non-writable ancestor directories
+  loop: "{{ tls_automation_ancestors.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect managed TLS paths before mutation
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop:
+    - {path: /etc/homelab-tls, type: directory, owner: 0}
+    - {path: /etc/homelab-tls/.issuer-account.json, type: file, owner: 0}
+    - {path: /etc/homelab-tls/config.json, type: file, owner: 0}
+    - {path: /etc/homelab-tls/cloudflare-token, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls, type: directory, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime, type: directory, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/__init__.py, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/certificates.py, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/policy.py, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/publication.py, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/runtime.py, type: file, owner: 0}
+    - {path: /usr/local/libexec, type: directory, owner: 0}
+    - {path: /usr/local/libexec/lego-5.4.1, type: file, owner: 0}
+    - {path: /usr/local/libexec/homelab-tls-issue, type: file, owner: 0}
+    - {path: /usr/local/libexec/homelab-tls-reconcile, type: file, owner: 0}
+    - {path: /usr/local/libexec/homelab-tls-verify, type: file, owner: 0}
+    - {path: /var/cache/homelab-tls, type: directory, owner: 0}
+    - path: >-
+        /var/cache/homelab-tls/lego_v5.4.1_linux_{{
+        'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}.tar.gz
+      type: file
+      owner: 0
+    - path: >-
+        /var/cache/homelab-tls/lego-5.4.1-{{
+        'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}
+      type: directory
+      owner: 0
+    - path: >-
+        /var/cache/homelab-tls/lego-5.4.1-{{
+        'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}/lego
+      type: file
+      owner: 0
+    - {path: /var/lib/homelab-tls, type: directory, owner: 0}
+    - {path: /var/lib/homelab-tls/private, type: directory, owner: 0}
+    - {path: /var/lib/homelab-tls/private/coordinator.lock, type: file, owner: 0}
+    - {path: /var/lib/homelab-tls/published, type: directory, owner: 0}
+    - {path: /var/lib/homelab-tls-issuer, type: directory, owner: "{{ tls_automation_issuer_uid }}"}
+    - {path: /etc/systemd/system/homelab-tls-issuer.service, type: file, owner: 0}
+    - {path: /etc/systemd/system/homelab-tls-renew.service, type: file, owner: 0}
+    - {path: /etc/systemd/system/homelab-tls-renew.timer, type: file, owner: 0}
+  loop_control:
+    label: "{{ item.path }}"
+  register: tls_automation_managed_paths
+
+- name: Reject unsafe existing TLS paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.uid == item.item.owner | int
+      - not item.stat.exists or item.stat.mode is match('^0[0-7][0-5][0-5]$')
+      - >-
+        not item.stat.exists or
+        (item.stat.isdir if item.item.type == 'directory' else item.stat.isreg)
+      - >-
+        not item.stat.exists or item.item.type == 'directory' or item.stat.nlink == 1
+      - >-
+        item.item.path != '/var/lib/homelab-tls-issuer' or
+        not item.stat.exists or
+        (tls_automation_passwd.stdout_lines | select('match', '^svc-acme:') | list | length == 1)
+      - >-
+        item.item.path != '/etc/homelab-tls/cloudflare-token' or
+        not item.stat.exists or item.stat.mode == '0600'
+      - >-
+        item.item.path != '/etc/homelab-tls/.issuer-account.json' or
+        not item.stat.exists or item.stat.size <= 4096
+    fail_msg: Existing TLS state has an unsafe owner, type, mode, or unmanaged issuer boundary
+  loop: "{{ tls_automation_managed_paths.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Inspect the systemd typed property client before mutation
+  ansible.builtin.stat:
+    path: /usr/bin/busctl
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: tls_automation_busctl
+
+- name: Require the trusted systemd typed property client
+  ansible.builtin.assert:
+    that:
+      - tls_automation_busctl.stat.exists
+      - tls_automation_busctl.stat.isreg | default(false)
+      - not tls_automation_busctl.stat.islnk | default(false)
+      - tls_automation_busctl.stat.uid | default(-1) == 0
+      - (tls_automation_busctl.stat.mode | default('')) is match('^0[1357][0-5][0-5]$')
+    fail_msg: TLS automation requires the root-owned busctl from the distribution systemd package
+
+- name: Inspect effective TLS units before mutation
+  ansible.builtin.import_tasks: inspect-units.yml
+
+- name: Require safe effective TLS units
+  ansible.builtin.assert:
+    that:
+      - tls_automation_unit_properties.results | tls_automation_validate_units(true, tls_automation_service_arrays.results)
+    fail_msg: Existing TLS units contain a noncanonical fragment, drop-in, or effective property
+
+- name: Inspect the validated issuer allocation marker
+  ansible.builtin.stat:
+    path: /etc/homelab-tls/.issuer-account.json
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: tls_automation_marker
+
+- name: Read the validated issuer allocation marker
+  ansible.builtin.slurp:
+    src: /etc/homelab-tls/.issuer-account.json
+  register: tls_automation_marker_file
+  when: tls_automation_marker.stat.exists
+  no_log: true
+
+- name: Validate effective issuer allocation
+  ansible.builtin.set_fact:
+    tls_automation_identity_state: >-
+      {{ tls_automation_issuer_account | tls_automation_validate_identity(
+           tls_automation_passwd.stdout, tls_automation_group.stdout,
+           (tls_automation_marker_file.content | b64decode)
+           if tls_automation_marker.stat.exists else '',
+           tls_automation_keyed_identity.results) }}
+  no_log: true
+
+- name: Read the managed issuer password lock
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, shadow, svc-acme]
+  register: tls_automation_issuer_shadow
+  changed_when: false
+  check_mode: false
+  when: tls_automation_identity_state == 'managed'
+  no_log: true
+
+- name: Require the managed issuer password to remain locked
+  ansible.builtin.assert:
+    that:
+      - tls_automation_issuer_shadow.stdout.split(':')[1] is match('^[!*]')
+    fail_msg: The managed issuer password is not locked
+  when: tls_automation_identity_state == 'managed'
+  no_log: true
+
+- name: Read managed issuer supplementary group IDs
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -G, svc-acme]
+  register: tls_automation_issuer_groups
+  changed_when: false
+  check_mode: false
+  when: tls_automation_identity_state == 'managed'
+  no_log: true
+
+- name: Require only the issuer primary group
+  ansible.builtin.assert:
+    that:
+      - tls_automation_issuer_groups.stdout.split() == [tls_automation_issuer_gid | string]
+    fail_msg: The managed issuer account has supplementary groups
+  when: tls_automation_identity_state == 'managed'
+  no_log: true

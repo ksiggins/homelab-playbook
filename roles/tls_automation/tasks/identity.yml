@@ -1,0 +1,127 @@
+---
+- name: Repeat effective host users before account mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, passwd]
+  register: tls_automation_current_passwd
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Repeat effective host groups before account mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group]
+  register: tls_automation_current_group
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Repeat issuer name and numeric ID resolution before account mutation
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, "{{ item.database }}", "{{ item.key }}"]
+  loop:
+    - {name: user_name, database: passwd, key: svc-acme}
+    - {name: user_uid, database: passwd, key: "{{ tls_automation_issuer_uid }}"}
+    - {name: group_name, database: group, key: svc-acme}
+    - {name: group_gid, database: group, key: "{{ tls_automation_issuer_gid }}"}
+  register: tls_automation_current_keyed_identity
+  changed_when: false
+  failed_when: tls_automation_current_keyed_identity.rc not in [0, 2]
+  check_mode: false
+  no_log: true
+
+- name: Repeat issuer allocation validation before mutation
+  ansible.builtin.assert:
+    that:
+      - >-
+        tls_automation_issuer_account | tls_automation_validate_identity(
+          tls_automation_current_passwd.stdout, tls_automation_current_group.stdout,
+          (tls_automation_marker_file.content | b64decode)
+          if tls_automation_marker.stat.exists else '',
+          tls_automation_current_keyed_identity.results) == tls_automation_identity_state
+    fail_msg: Host identity allocation changed during TLS preflight
+  no_log: true
+
+- name: Create the dedicated issuer primary group
+  ansible.builtin.group:
+    name: svc-acme
+    gid: "{{ tls_automation_issuer_gid }}"
+    system: true
+  when: tls_automation_identity_state == 'new'
+
+- name: Create the locked non-login issuer account
+  ansible.builtin.user:
+    name: svc-acme
+    uid: "{{ tls_automation_issuer_uid }}"
+    group: svc-acme
+    groups: ''
+    append: false
+    home: /var/lib/homelab-tls-issuer
+    create_home: false
+    shell: /usr/sbin/nologin
+    system: true
+    password_lock: true
+  when: tls_automation_identity_state == 'new'
+
+- name: Create the administrator-owned TLS configuration directory
+  ansible.builtin.file:
+    path: /etc/homelab-tls
+    state: directory
+    owner: root
+    group: svc-acme
+    mode: '0750'
+
+- name: Record stable issuer identity allocation
+  ansible.builtin.template:
+    src: issuer-account.json.j2
+    dest: /etc/homelab-tls/.issuer-account.json
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Read completed issuer allocation marker
+  ansible.builtin.slurp:
+    src: /etc/homelab-tls/.issuer-account.json
+  register: tls_automation_completed_marker
+
+- name: Read completed issuer identity
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, "{{ item }}"]
+  loop: [passwd, group]
+  register: tls_automation_completed_databases
+  changed_when: false
+  no_log: true
+
+- name: Resolve completed issuer names and numeric IDs
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, "{{ item.database }}", "{{ item.key }}"]
+  loop:
+    - {name: user_name, database: passwd, key: svc-acme}
+    - {name: user_uid, database: passwd, key: "{{ tls_automation_issuer_uid }}"}
+    - {name: group_name, database: group, key: svc-acme}
+    - {name: group_gid, database: group, key: "{{ tls_automation_issuer_gid }}"}
+  register: tls_automation_completed_keyed_identity
+  changed_when: false
+  failed_when: tls_automation_completed_keyed_identity.rc not in [0, 2]
+  check_mode: false
+  no_log: true
+
+- name: Read completed issuer supplementary group IDs
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -G, svc-acme]
+  register: tls_automation_completed_groups
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Verify completed issuer allocation
+  ansible.builtin.assert:
+    that:
+      - >-
+        tls_automation_issuer_account | tls_automation_validate_identity(
+          tls_automation_completed_databases.results[0].stdout,
+          tls_automation_completed_databases.results[1].stdout,
+          tls_automation_completed_marker.content | b64decode,
+          tls_automation_completed_keyed_identity.results) == 'managed'
+      - tls_automation_completed_groups.stdout.split() == [tls_automation_issuer_gid | string]
+    fail_msg: The dedicated issuer identity does not match its allocation record
+  no_log: true

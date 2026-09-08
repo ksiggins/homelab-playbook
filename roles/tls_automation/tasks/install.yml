@@ -1,0 +1,113 @@
+---
+- name: Create administrator-owned runtime directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /usr/local/libexec, owner: root, group: root, mode: '0755'}
+    - {path: /usr/local/lib/homelab-tls, owner: root, group: root, mode: '0755'}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime, owner: root, group: root, mode: '0755'}
+    - {path: /var/cache/homelab-tls, owner: root, group: root, mode: '0755'}
+
+- name: Install fixed TLS Python modules
+  ansible.builtin.copy:
+    src: "tls_runtime/{{ item }}"
+    dest: "/usr/local/lib/homelab-tls/tls_runtime/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - __init__.py
+    - certificates.py
+    - policy.py
+    - publication.py
+    - runtime.py
+    - unit_contract.py
+
+- name: Install fixed TLS launchers
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/libexec/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - homelab-tls-issue
+    - homelab-tls-reconcile
+    - homelab-tls-verify
+
+- name: Create isolated lego extraction directory
+  ansible.builtin.file:
+    path: >-
+      /var/cache/homelab-tls/lego-5.4.1-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download the pinned lego archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/go-acme/lego/releases/download/v5.4.1/lego_v5.4.1_linux_{{
+      'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}.tar.gz
+    dest: >-
+      /var/cache/homelab-tls/lego_v5.4.1_linux_{{
+      'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}.tar.gz
+    checksum: >-
+      sha256:{{
+      'ebb33f1bead5a7c99dd46f1c5734b44cf1eab5b5c12faf397cd14d50a5916419'
+      if ansible_facts['architecture'] == 'x86_64'
+      else '8494c06bde449ac4d65c726b7ea50d67ac61f422e698c9b78b47778445b098f2' }}
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Extract only the pinned lego executable
+  ansible.builtin.unarchive:
+    src: >-
+      /var/cache/homelab-tls/lego_v5.4.1_linux_{{
+      'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}.tar.gz
+    dest: >-
+      /var/cache/homelab-tls/lego-5.4.1-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}
+    include: [lego]
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the pinned lego executable
+  ansible.builtin.copy:
+    src: >-
+      /var/cache/homelab-tls/lego-5.4.1-{{
+      'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}/lego
+    remote_src: true
+    dest: /usr/local/libexec/lego-5.4.1
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create fixed TLS state boundaries
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /var/lib/homelab-tls, owner: root, group: "{{ tls_automation_reader_gid }}", mode: '0750'}
+    - {path: /var/lib/homelab-tls/private, owner: root, group: root, mode: '0700'}
+    - {path: /var/lib/homelab-tls/published, owner: root, group: "{{ tls_automation_reader_gid }}", mode: '0750'}
+    - {path: /var/lib/homelab-tls-issuer, owner: svc-acme, group: svc-acme, mode: '0700'}
+
+- name: Create the fixed coordinator lock
+  ansible.builtin.file:
+    path: /var/lib/homelab-tls/private/coordinator.lock
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    access_time: preserve
+    modification_time: preserve

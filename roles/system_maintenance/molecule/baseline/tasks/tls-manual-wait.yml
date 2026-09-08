@@ -1,0 +1,198 @@
+---
+- name: Require inactive TLS timer before synthetic manual-start evidence
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, show, homelab-tls-renew.timer, --property=ActiveState, --value]
+  register: system_maintenance_molecule_tls_wait_timer
+  changed_when: false
+  failed_when: >-
+    system_maintenance_molecule_tls_wait_timer.rc != 0 or
+    system_maintenance_molecule_tls_wait_timer.stdout | trim != 'inactive'
+
+- name: Inspect synthetic renewal override path
+  ansible.builtin.stat:
+    path: /run/systemd/system/homelab-tls-renew.service.d
+  register: system_maintenance_molecule_tls_wait_override
+
+- name: Require an unused synthetic renewal override path
+  ansible.builtin.assert:
+    that:
+      - not system_maintenance_molecule_tls_wait_override.stat.exists
+
+- name: Create private synthetic manual-start state
+  ansible.builtin.tempfile:
+    state: directory
+    path: /var/lib/homelab-tls
+    prefix: manual-wait-fixture-
+  register: system_maintenance_molecule_tls_wait_root
+
+- name: Prove the production manual-start path waits for the existing job
+  block:
+    - name: Install bounded synthetic oneshot program
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../../tests/tls/manual_wait_fixture.py"
+        dest: "{{ system_maintenance_molecule_tls_wait_root.path }}/wait.py"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Create synthetic renewal override directory
+      ansible.builtin.file:
+        path: /run/systemd/system/homelab-tls-renew.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # Explicit User plus seccomp triggers CAP_SYS_ADMIN preservation in systemd
+    # v257; default rootless Podman lacks that capability (Debian bug 1078205).
+    # Use the system manager's root identity only for this waiting fixture.
+    # Keep Group and every sandbox directive; assert the process identity below.
+    - name: Install the bounded fixture with implicit system-manager identity
+      ansible.builtin.copy:
+        dest: /run/systemd/system/homelab-tls-renew.service.d/fixture.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          JobTimeoutSec=60s
+          [Service]
+          User=
+          ExecStart=
+          ExecStart=/usr/bin/python3 {{ system_maintenance_molecule_tls_wait_root.path }}/wait.py {{ system_maintenance_molecule_tls_wait_exit_code }}
+          TimeoutStartSec=45s
+
+    - name: Load the disposable synthetic service command
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    # Start only this disposable job; container network-online may remain queued.
+    # The shared manual start below still uses the normal production job mode.
+    - name: Begin the synthetic timer-equivalent job without awaiting completion
+      ansible.builtin.command: # noqa command-instead-of-module
+        argv: [/usr/bin/systemctl, start, --no-block, --job-mode=ignore-dependencies, homelab-tls-renew.service]
+      changed_when: true
+
+    - name: Wait until the synthetic process has entered its bounded wait
+      ansible.builtin.wait_for:
+        path: "{{ system_maintenance_molecule_tls_wait_root.path }}/started.json"
+        timeout: 15
+
+    - name: Inspect the already-activating synthetic service
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, homelab-tls-renew.service, --property=ActiveState, --property=MainPID]
+      register: system_maintenance_molecule_tls_wait_before
+      changed_when: false
+
+    - name: Read independent synthetic process startup identity
+      ansible.builtin.slurp:
+        src: "{{ system_maintenance_molecule_tls_wait_root.path }}/started.json"
+      register: system_maintenance_molecule_tls_wait_started
+
+    - name: Require an existing activating job before manual renewal
+      ansible.builtin.assert:
+        that:
+          - "'ActiveState=activating' in system_maintenance_molecule_tls_wait_before.stdout_lines"
+
+    - name: Run the exact shared manual renewal task and retain its failure
+      block:
+        - name: Await manual reconciliation using the production task
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../../../../playbooks/tls/tasks/renew.yml"
+      rescue:
+        - name: Require failure from the shared start command itself
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Await the fixed TLS reconciliation service'
+              - system_maintenance_molecule_tls_wait_exit_code == 7
+              - tls_automation_manual_start.rc != 0
+
+    - name: Read independent synthetic process completion evidence
+      ansible.builtin.slurp:
+        src: "{{ system_maintenance_molecule_tls_wait_root.path }}/completed.json"
+      register: system_maintenance_molecule_tls_wait_completed
+
+    - name: Prove manual renewal waited and propagated the same job result
+      ansible.builtin.assert:
+        that:
+          - tls_automation_manual_start.delta.split(':')[-1] | float >= 1
+          - (tls_automation_manual_start.rc == 0) == (system_maintenance_molecule_tls_wait_exit_code == 0)
+          - >-
+            (system_maintenance_molecule_tls_wait_completed.content | b64decode | from_json).exit_code ==
+            system_maintenance_molecule_tls_wait_exit_code
+          - >-
+            'MainPID=' ~ ((system_maintenance_molecule_tls_wait_completed.content | b64decode | from_json).pid | string)
+            in system_maintenance_molecule_tls_wait_before.stdout_lines
+
+    - name: Require root identity without supplementary privilege in both process observations
+      ansible.builtin.assert:
+        that:
+          - item.uid == 0
+          - item.euid == 0
+          - item.gid == 0
+          - item.egid == 0
+          - item.groups | difference([0]) | length == 0
+      loop:
+        - "{{ system_maintenance_molecule_tls_wait_started.content | b64decode | from_json }}"
+        - "{{ system_maintenance_molecule_tls_wait_completed.content | b64decode | from_json }}"
+  rescue:
+    - name: Read bounded unit and job metadata before fixture cleanup
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/systemctl
+          - show
+          - homelab-tls-renew.service
+          - --all
+          - --property=Job,ActiveState,SubState,Result,ExecMainStatus,ExecMainCode,MainPID
+      register: system_maintenance_molecule_tls_wait_diagnostics
+      changed_when: false
+      failed_when: false
+      timeout: 15
+
+    - name: Report only synthetic unit state and diagnostic return code
+      ansible.builtin.debug:
+        msg:
+          query_rc: "{{ system_maintenance_molecule_tls_wait_diagnostics.rc | default(-1) }}"
+          unit_state: "{{ system_maintenance_molecule_tls_wait_diagnostics.stdout_lines | default([]) }}"
+
+    - name: Preserve failed manual-start evidence after diagnostics
+      ansible.builtin.fail:
+        msg: Synthetic manual-start evidence failed; inspect the bounded unit and job metadata above
+  always:
+    - name: Stop the disposable synthetic job before restoring the real unit
+      ansible.builtin.systemd_service:
+        name: homelab-tls-renew.service
+        state: stopped
+
+    - name: Remove the disposable renewal command override
+      ansible.builtin.file:
+        path: /run/systemd/system/homelab-tls-renew.service.d
+        state: absent
+
+    - name: Reload the restored inactive renewal unit
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Remove private synthetic manual-start state
+      ansible.builtin.file:
+        path: "{{ system_maintenance_molecule_tls_wait_root.path }}"
+        state: absent
+
+    - name: Read restored canonical renewal identity and command
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/systemctl
+          - show
+          - homelab-tls-renew.service
+          - --all
+          - --property=User,Group,SupplementaryGroups,DropInPaths,ExecStart
+      register: system_maintenance_molecule_tls_wait_restored
+      changed_when: false
+
+    - name: Require canonical renewal identity without fixture overrides
+      ansible.builtin.assert:
+        that:
+          - "'User=root' in system_maintenance_molecule_tls_wait_restored.stdout_lines"
+          - "'Group=root' in system_maintenance_molecule_tls_wait_restored.stdout_lines"
+          - "'SupplementaryGroups=' in system_maintenance_molecule_tls_wait_restored.stdout_lines"
+          - "'DropInPaths=' in system_maintenance_molecule_tls_wait_restored.stdout_lines"
+          - "'argv[]=/usr/local/libexec/homelab-tls-reconcile ;' in system_maintenance_molecule_tls_wait_restored.stdout"

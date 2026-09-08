@@ -1,0 +1,9 @@
+---
+# systemd_service treats an activating oneshot as already started and returns
+# early. Blocking systemctl start joins that job and propagates its final result.
+- name: Await the fixed TLS reconciliation service
+  ansible.builtin.command: # noqa command-instead-of-module
+    argv: [/usr/bin/systemctl, start, homelab-tls-renew.service]
+  register: tls_automation_manual_start
+  changed_when: true
+  become: true

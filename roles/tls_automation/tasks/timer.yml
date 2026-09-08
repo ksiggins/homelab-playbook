@@ -1,0 +1,53 @@
+---
+- name: Repeat effective TLS unit inspection before timer reconciliation
+  ansible.builtin.import_tasks: inspect-units.yml
+
+- name: Require safe effective TLS units immediately before timer reconciliation
+  ansible.builtin.assert:
+    that:
+      - tls_automation_unit_properties.results | tls_automation_validate_units(false, tls_automation_service_arrays.results)
+    fail_msg: Installed TLS units changed before timer reconciliation
+
+- name: Keep automatic TLS renewal disabled without ongoing authorization
+  ansible.builtin.systemd_service:
+    name: homelab-tls-renew.timer
+    enabled: false
+    state: stopped
+  when: not tls_automation_timer_enabled
+
+- name: Validate enabled TLS renewal preconditions
+  when: tls_automation_timer_enabled
+  block:
+    - name: Inspect fixed Caddy adapter
+      ansible.builtin.stat:
+        path: /usr/local/libexec/homelab-tls-caddy
+        follow: false
+        get_checksum: false
+        get_mime: false
+        get_attributes: false
+      register: tls_automation_adapter
+
+    - name: Require the trusted executable Caddy adapter and credential
+      ansible.builtin.assert:
+        that:
+          - tls_automation_adapter.stat.exists
+          - tls_automation_adapter.stat.isreg | default(false)
+          - not tls_automation_adapter.stat.islnk | default(false)
+          - tls_automation_adapter.stat.uid | default(-1) == 0
+          - (tls_automation_adapter.stat.mode | default('')) is match('^0[1357][0-5][0-5]$')
+          - tls_automation_adapter.stat.executable | default(false)
+          - tls_automation_adapter.stat.nlink | default(0) == 1
+          - tls_automation_credential.stat.exists
+        fail_msg: Timer enablement requires the fixed Caddy adapter and private credential
+      no_log: true
+
+    - name: Observe the complete active TLS publication before timer mutation
+      ansible.builtin.command:
+        argv: [/usr/local/libexec/homelab-tls-verify]
+      changed_when: false
+
+    - name: Enable and start automatic TLS renewal
+      ansible.builtin.systemd_service:
+        name: homelab-tls-renew.timer
+        enabled: true
+        state: started

@@ -512,3 +512,603 @@
       local_address: 127.0.0.1
       local_port: 22
     system_maintenance_native_reboot_enabled: false
+
+- name: Verify disabled off-cluster TLS capability and distro runtime
+  hosts: os_managed
+  gather_facts: true
+  become: true
+  vars_files:
+    - vars/tls.yml
+  tasks:
+    - name: Gather installed package evidence
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Read effective issuer identity
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, passwd, svc-acme]
+      register: system_maintenance_molecule_tls_passwd
+      changed_when: false
+
+    - name: Read effective issuer group
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, group, svc-acme]
+      register: system_maintenance_molecule_tls_group
+      changed_when: false
+
+    - name: Read issuer supplementary groups
+      ansible.builtin.command:
+        argv: [/usr/bin/id, -G, svc-acme]
+      register: system_maintenance_molecule_tls_groups
+      changed_when: false
+
+    - name: Read issuer password lock
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, shadow, svc-acme]
+      register: system_maintenance_molecule_tls_shadow
+      changed_when: false
+      no_log: true
+
+    - name: Verify TLS packages and isolated issuer identity
+      ansible.builtin.assert:
+        that:
+          - "'python3' in ansible_facts.packages"
+          - "'python3-cryptography' in ansible_facts.packages"
+          - "'openssl' in ansible_facts.packages"
+          - "'ca-certificates' in ansible_facts.packages"
+          - system_maintenance_molecule_tls_passwd.stdout.split(':')[2] == '2010'
+          - system_maintenance_molecule_tls_passwd.stdout.split(':')[3] == '2010'
+          - system_maintenance_molecule_tls_passwd.stdout.split(':')[5] == '/var/lib/homelab-tls-issuer'
+          - system_maintenance_molecule_tls_passwd.stdout.split(':')[6] in ['/usr/sbin/nologin', '/sbin/nologin']
+          - system_maintenance_molecule_tls_group.stdout.split(':')[2] == '2010'
+          - system_maintenance_molecule_tls_group.stdout.split(':')[3] == ''
+          - system_maintenance_molecule_tls_groups.stdout | trim == '2010'
+          - system_maintenance_molecule_tls_shadow.stdout.split(':')[1] is match('^[!*]')
+
+    - name: Inspect installed TLS filesystem boundaries
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+        follow: false
+        get_checksum: false
+        get_mime: false
+        get_attributes: false
+      loop:
+        - {path: /etc/homelab-tls, mode: '0750', uid: 0, gid: 2010, type: directory}
+        - {path: /etc/homelab-tls/config.json, mode: '0640', uid: 0, gid: 2010, type: file}
+        - {path: /etc/homelab-tls/.issuer-account.json, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /var/lib/homelab-tls, mode: '0750', uid: 0, gid: 2001, type: directory}
+        - {path: /var/lib/homelab-tls/private, mode: '0700', uid: 0, gid: 0, type: directory}
+        - {path: /var/lib/homelab-tls/private/coordinator.lock, mode: '0600', uid: 0, gid: 0, type: file}
+        - {path: /var/lib/homelab-tls/published, mode: '0750', uid: 0, gid: 2001, type: directory}
+        - {path: /var/lib/homelab-tls-issuer, mode: '0700', uid: 2010, gid: 2010, type: directory}
+        - {path: /usr/local/lib/homelab-tls, mode: '0755', uid: 0, gid: 0, type: directory}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime, mode: '0755', uid: 0, gid: 0, type: directory}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/__init__.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/certificates.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/policy.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/publication.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/unit_contract.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/runtime.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/libexec/homelab-tls-issue, mode: '0755', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/libexec/homelab-tls-reconcile, mode: '0755', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/libexec/homelab-tls-verify, mode: '0755', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/libexec/lego-5.4.1, mode: '0755', uid: 0, gid: 0, type: file}
+        - {path: /etc/systemd/system/homelab-tls-issuer.service, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /etc/systemd/system/homelab-tls-renew.service, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /etc/systemd/system/homelab-tls-renew.timer, mode: '0644', uid: 0, gid: 0, type: file}
+      loop_control:
+        label: "{{ item.path }}"
+      register: system_maintenance_molecule_tls_paths
+
+    - name: Verify exact TLS filesystem ownership and modes
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - not item.stat.islnk
+          - item.stat.uid == item.item.uid
+          - item.stat.gid == item.item.gid
+          - item.stat.mode == item.item.mode
+          - item.stat.isdir if item.item.type == 'directory' else item.stat.isreg
+      loop: "{{ system_maintenance_molecule_tls_paths.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+
+    - name: Inspect omitted credential and unavailable adapter
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        get_checksum: false
+        get_mime: false
+        get_attributes: false
+      loop:
+        - /etc/homelab-tls/cloudflare-token
+        - /usr/local/libexec/homelab-tls-caddy
+      register: system_maintenance_molecule_tls_absent_inputs
+
+    - name: Verify omitted private input remains absent
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_absent_inputs.results | selectattr('stat.exists') | list | length == 0
+
+    - name: Read installed public TLS policy
+      ansible.builtin.slurp:
+        src: /etc/homelab-tls/config.json
+      register: system_maintenance_molecule_tls_policy
+
+    - name: Read installed issuer allocation marker
+      ansible.builtin.slurp:
+        src: /etc/homelab-tls/.issuer-account.json
+      register: system_maintenance_molecule_tls_marker
+
+    - name: Verify exact public policy and account marker
+      ansible.builtin.assert:
+        that:
+          - >-
+            system_maintenance_molecule_tls_policy.content | b64decode | from_json ==
+            {'namespace': 'infra.example.com', 'email': 'acme@example.com', 'reader_gid': 2001,
+             'endpoints': [{'hostname': 'modem.infra.example.com', 'address': '192.0.2.10', 'port': 443}]}
+          - >-
+            system_maintenance_molecule_tls_marker.content | b64decode | from_json ==
+            {'name': 'svc-acme', 'uid': 2010, 'gid': 2010}
+
+    - name: Exercise unmanaged issuer adoption rejection in disposable state
+      block:
+        - name: Temporarily remove the issuer allocation marker
+          ansible.builtin.file:
+            path: /etc/homelab-tls/.issuer-account.json
+            state: absent
+
+        - name: Run TLS preflight against the unmarked existing account
+          ansible.builtin.include_role:
+            name: tls_automation
+            tasks_from: preflight.yml
+      rescue:
+        - name: Record the expected account adoption failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Validate effective issuer allocation'
+
+        - name: Record successful adoption rejection
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_adoption_rejected: true
+      always:
+        - name: Restore the issuer allocation marker
+          ansible.builtin.copy:
+            content: "{{ system_maintenance_molecule_tls_marker.content | b64decode }}"
+            dest: /etc/homelab-tls/.issuer-account.json
+            owner: root
+            group: root
+            mode: '0644'
+          no_log: true
+          diff: false
+
+    - name: Require preflight to reject unmarked account adoption
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_adoption_rejected | default(false)
+
+    - name: Exercise keyed NSS UID collision rejection
+      block:
+        - name: Validate a hidden UID collision against synthetic keyed records
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_hidden_uid_result: >-
+              {{ {'name': 'svc-acme', 'uid': 2010, 'gid': 2010}
+                 | tls_automation_validate_identity('', '', '', [
+                   {'item': {'name': 'user_name'}, 'rc': 2, 'stdout': ''},
+                   {'item': {'name': 'user_uid'}, 'rc': 0,
+                    'stdout': 'svc-hidden:x:2010:3010::/nonexistent:/usr/sbin/nologin'},
+                   {'item': {'name': 'group_name'}, 'rc': 2, 'stdout': ''},
+                   {'item': {'name': 'group_gid'}, 'rc': 2, 'stdout': ''}
+                 ]) }}
+      rescue:
+        - name: Record hidden UID collision rejection
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_hidden_uid_rejected: true
+
+    - name: Exercise keyed NSS GID collision rejection
+      block:
+        - name: Validate a hidden GID collision against synthetic keyed records
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_hidden_gid_result: >-
+              {{ {'name': 'svc-acme', 'uid': 2010, 'gid': 2010}
+                 | tls_automation_validate_identity('', '', '', [
+                   {'item': {'name': 'user_name'}, 'rc': 2, 'stdout': ''},
+                   {'item': {'name': 'user_uid'}, 'rc': 2, 'stdout': ''},
+                   {'item': {'name': 'group_name'}, 'rc': 2, 'stdout': ''},
+                   {'item': {'name': 'group_gid'}, 'rc': 0, 'stdout': 'svc-hidden:x:2010:'}
+                 ]) }}
+      rescue:
+        - name: Record hidden GID collision rejection
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_hidden_gid_rejected: true
+
+    - name: Require keyed NSS collision rejection
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_hidden_uid_rejected | default(false)
+          - system_maintenance_molecule_tls_hidden_gid_rejected | default(false)
+
+    - name: Parse installed systemd unit definitions
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/systemd-analyze
+          - verify
+          - /etc/systemd/system/homelab-tls-issuer.service
+          - /etc/systemd/system/homelab-tls-renew.service
+          - /etc/systemd/system/homelab-tls-renew.timer
+      changed_when: false
+
+    - name: Read effective TLS service properties
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/systemctl
+          - show
+          - "{{ item }}"
+          - --property=User,Group,SupplementaryGroups,Type,NoNewPrivileges,ProtectSystem,PrivateTmp,ReadWritePaths,FragmentPath,DropInPaths
+      loop:
+        - homelab-tls-issuer.service
+        - homelab-tls-renew.service
+      register: system_maintenance_molecule_tls_services
+      changed_when: false
+
+    - name: Verify effective issuer service boundary
+      ansible.builtin.assert:
+        that:
+          - "'User=svc-acme' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'Group=svc-acme' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'SupplementaryGroups=' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'Type=oneshot' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'NoNewPrivileges=yes' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'ProtectSystem=strict' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'PrivateTmp=yes' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'ReadWritePaths=/var/lib/homelab-tls-issuer' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'FragmentPath=/etc/systemd/system/homelab-tls-issuer.service' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+          - "'DropInPaths=' in system_maintenance_molecule_tls_services.results[0].stdout_lines"
+
+    - name: Verify effective root coordinator service boundary
+      ansible.builtin.assert:
+        that:
+          - "'User=root' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'Group=root' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'SupplementaryGroups=' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'Type=oneshot' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'NoNewPrivileges=yes' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'ProtectSystem=strict' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'PrivateTmp=yes' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'ReadWritePaths=/var/lib/homelab-tls' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'FragmentPath=/etc/systemd/system/homelab-tls-renew.service' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - "'DropInPaths=' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+
+    - name: Read effective TLS unit configuration
+      ansible.builtin.command:
+        argv: [/usr/bin/systemd-analyze, cat-config, "systemd/system/{{ item }}"]
+      loop:
+        - homelab-tls-issuer.service
+        - homelab-tls-renew.service
+        - homelab-tls-renew.timer
+      register: system_maintenance_molecule_tls_unit_configuration
+      changed_when: false
+
+    - name: Verify fixed commands, credential mapping, and timer schedule
+      ansible.builtin.assert:
+        that:
+          - "'ExecStart=/usr/local/libexec/homelab-tls-issue' in system_maintenance_molecule_tls_unit_configuration.results[0].stdout_lines"
+          - "'LoadCredential=cloudflare-token:/etc/homelab-tls/cloudflare-token' in system_maintenance_molecule_tls_unit_configuration.results[0].stdout_lines"
+          - "'TimeoutStartSec=15min' in system_maintenance_molecule_tls_unit_configuration.results[0].stdout_lines"
+          - "'ExecStart=/usr/local/libexec/homelab-tls-reconcile' in system_maintenance_molecule_tls_unit_configuration.results[1].stdout_lines"
+          - "'TimeoutStartSec=1h' in system_maintenance_molecule_tls_unit_configuration.results[1].stdout_lines"
+          - "'OnCalendar=*-*-* 00,12:00:00' in system_maintenance_molecule_tls_unit_configuration.results[2].stdout_lines"
+          - "'RandomizedDelaySec=1h' in system_maintenance_molecule_tls_unit_configuration.results[2].stdout_lines"
+          - "'Persistent=true' in system_maintenance_molecule_tls_unit_configuration.results[2].stdout_lines"
+
+    - name: Exercise runtime control drop-in rejection
+      block:
+        - name: Create a disposable runtime control drop-in directory
+          ansible.builtin.file:
+            path: /run/systemd/system.control/homelab-tls-renew.service.d
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Install a weakening runtime control drop-in
+          ansible.builtin.copy:
+            dest: /run/systemd/system.control/homelab-tls-renew.service.d/override.conf
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Service]
+              NoNewPrivileges=no
+
+        - name: Reload systemd with the disposable runtime control drop-in
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+
+        - name: Run TLS preflight against the runtime control drop-in
+          ansible.builtin.include_role:
+            name: tls_automation
+            tasks_from: preflight.yml
+      rescue:
+        - name: Verify effective-unit rejection caught the runtime control drop-in
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require safe effective TLS units'
+
+        - name: Record runtime control drop-in rejection
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_control_dropin_rejected: true
+      always:
+        - name: Remove the disposable runtime control drop-in
+          ansible.builtin.file:
+            path: /run/systemd/system.control/homelab-tls-renew.service.d
+            state: absent
+
+        - name: Reload systemd after runtime control drop-in cleanup
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+
+    - name: Require runtime control drop-in rejection
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_control_dropin_rejected | default(false)
+
+    - name: Exercise loaded transient templated-instance rejection
+      block:
+        - name: Start a disposable transient templated instance
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/systemd-run
+              - --unit=homelab-tls-renew@fixture.service
+              - --collect
+              - --property=Type=oneshot
+              - --property=RemainAfterExit=yes
+              - /usr/bin/true
+          changed_when: true
+
+        - name: Run TLS preflight against the loaded templated instance
+          ansible.builtin.include_role:
+            name: tls_automation
+            tasks_from: preflight.yml
+      rescue:
+        - name: Verify loaded-unit rejection caught the templated instance
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Reject templated TLS unit instances'
+
+        - name: Record loaded templated-instance rejection
+          ansible.builtin.set_fact:
+            system_maintenance_molecule_tls_instance_rejected: true
+      always:
+        - name: Stop and collect the disposable templated instance
+          ansible.builtin.systemd_service:
+            name: homelab-tls-renew@fixture.service
+            state: stopped
+
+    - name: Require loaded templated-instance rejection
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_instance_rejected | default(false)
+
+    - name: Exercise systemd credential metadata with synthetic input
+      block:
+        - name: Install the metadata-only credential probe
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../../../../tests/tls/credential_probe.py"
+            dest: /usr/local/lib/homelab-tls/credential_probe.py
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Create an obvious synthetic credential source
+          ansible.builtin.copy:
+            content: molecule-not-a-live-token
+            dest: /run/homelab-tls-fixture-token
+            owner: root
+            group: root
+            mode: '0600'
+          diff: false
+
+        - name: Observe systemd LoadCredential metadata as the issuer account
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/systemd-run
+              - --unit=homelab-tls-fixture-credential
+              - --wait
+              - --pipe
+              - --collect
+              - --property=User=svc-acme
+              - --property=Group=svc-acme
+              - --property=NoNewPrivileges=yes
+              - --property=LoadCredential=cloudflare-token:/run/homelab-tls-fixture-token
+              - /usr/bin/python3
+              - -I
+              - /usr/local/lib/homelab-tls/credential_probe.py
+          register: system_maintenance_molecule_tls_credential_probe
+          changed_when: false
+
+        - name: Report credential metadata for runtime evidence
+          ansible.builtin.debug:
+            msg: >-
+              {{ system_maintenance_molecule_tls_credential_probe.stdout_lines[-1] | from_json }}
+
+        - name: Verify effective systemd credential access boundary
+          vars:
+            system_maintenance_molecule_tls_credential_metadata: >-
+              {{ system_maintenance_molecule_tls_credential_probe.stdout_lines[-1] | from_json }}
+            system_maintenance_molecule_tls_credential_file_acl:
+              - {tag: 1, permissions: 4, id: 4294967295}
+              - {tag: 2, permissions: 4, id: 2010}
+              - {tag: 4, permissions: 0, id: 4294967295}
+              - {tag: 16, permissions: 4, id: 4294967295}
+              - {tag: 32, permissions: 0, id: 4294967295}
+            system_maintenance_molecule_tls_credential_directory_acl:
+              - {tag: 1, permissions: 5, id: 4294967295}
+              - {tag: 2, permissions: 5, id: 2010}
+              - {tag: 4, permissions: 0, id: 4294967295}
+              - {tag: 16, permissions: 5, id: 4294967295}
+              - {tag: 32, permissions: 0, id: 4294967295}
+          ansible.builtin.assert:
+            that:
+              - system_maintenance_molecule_tls_credential_metadata.process_uid == 2010
+              - system_maintenance_molecule_tls_credential_metadata.process_gid == 2010
+              - system_maintenance_molecule_tls_credential_metadata.credential.regular
+              - not system_maintenance_molecule_tls_credential_metadata.credential.directory
+              - >-
+                system_maintenance_molecule_tls_credential_metadata.credential.mode
+                is match('^0[0-7][0-5][0-5]$')
+              - system_maintenance_molecule_tls_credential_metadata.credential.links == 1
+              - >-
+                (system_maintenance_molecule_tls_credential_metadata.credential.uid == 0 and
+                 system_maintenance_molecule_tls_credential_metadata.credential.gid == 0 and
+                 system_maintenance_molecule_tls_credential_metadata.credential.mode == '0440' and
+                 system_maintenance_molecule_tls_credential_metadata.credential.acl ==
+                 system_maintenance_molecule_tls_credential_file_acl) or
+                (system_maintenance_molecule_tls_credential_metadata.credential.uid == 2010 and
+                 system_maintenance_molecule_tls_credential_metadata.credential.gid in [0, 2010] and
+                 system_maintenance_molecule_tls_credential_metadata.credential.mode == '0400' and
+                 system_maintenance_molecule_tls_credential_metadata.credential.acl is none and
+                 system_maintenance_molecule_tls_credential_metadata.credential.filesystem_readonly)
+              - system_maintenance_molecule_tls_credential_metadata.parent.directory
+              - not system_maintenance_molecule_tls_credential_metadata.parent.regular
+              - >-
+                system_maintenance_molecule_tls_credential_metadata.credential.uid ==
+                system_maintenance_molecule_tls_credential_metadata.parent.uid
+              - >-
+                system_maintenance_molecule_tls_credential_metadata.credential.gid ==
+                system_maintenance_molecule_tls_credential_metadata.parent.gid
+              - >-
+                system_maintenance_molecule_tls_credential_metadata.parent.mode
+                is match('^0[0-7][0-5][0-5]$')
+              - >-
+                (system_maintenance_molecule_tls_credential_metadata.parent.uid == 0 and
+                 system_maintenance_molecule_tls_credential_metadata.parent.gid == 0 and
+                 system_maintenance_molecule_tls_credential_metadata.parent.mode == '0550' and
+                 system_maintenance_molecule_tls_credential_metadata.parent.acl ==
+                 system_maintenance_molecule_tls_credential_directory_acl) or
+                (system_maintenance_molecule_tls_credential_metadata.parent.uid == 2010 and
+                 system_maintenance_molecule_tls_credential_metadata.parent.gid in [0, 2010] and
+                 system_maintenance_molecule_tls_credential_metadata.parent.mode == '0500' and
+                 system_maintenance_molecule_tls_credential_metadata.parent.acl is none and
+                 system_maintenance_molecule_tls_credential_metadata.parent.filesystem_readonly)
+              - system_maintenance_molecule_tls_credential_metadata.credential_root.directory
+              - system_maintenance_molecule_tls_credential_metadata.credential_root.uid == 0
+              - system_maintenance_molecule_tls_credential_metadata.credential_root.gid == 0
+              - system_maintenance_molecule_tls_credential_metadata.credential_root.mode == '0755'
+      always:
+        - name: Remove synthetic credential evidence files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /run/homelab-tls-fixture-token
+            - /usr/local/lib/homelab-tls/credential_probe.py
+
+    - name: Read pinned lego version
+      ansible.builtin.command:
+        argv: [/usr/local/libexec/lego-5.4.1, --version]
+      register: system_maintenance_molecule_tls_lego_version
+      changed_when: false
+
+    - name: Verify pinned lego release
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_lego_version.stdout is search('version 5.4.1')
+
+    - name: Read disabled renewal timer state
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, is-enabled, homelab-tls-renew.timer]
+      register: system_maintenance_molecule_tls_timer_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Read inactive renewal timer state
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, is-active, homelab-tls-renew.timer]
+      register: system_maintenance_molecule_tls_timer_active
+      changed_when: false
+      failed_when: false
+
+    - name: Read issuer state before unavailable-adapter preflight
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, homelab-tls-issuer.service, --property=ActiveState, --value]
+      register: system_maintenance_molecule_tls_issuer_before
+      changed_when: false
+
+    - name: Exercise runtime preflight without an adapter or credential
+      ansible.builtin.command:
+        argv: [/usr/local/libexec/homelab-tls-reconcile]
+      register: system_maintenance_molecule_tls_preflight
+      changed_when: false
+      failed_when: false
+
+    - name: Read issuer state after unavailable-adapter preflight
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, homelab-tls-issuer.service, --property=ActiveState, --value]
+      register: system_maintenance_molecule_tls_issuer_after
+      changed_when: false
+
+    - name: Verify disabled and fail-closed behavior
+      ansible.builtin.assert:
+        that:
+          - system_maintenance_molecule_tls_timer_enabled.rc != 0
+          - system_maintenance_molecule_tls_timer_enabled.stdout | trim == 'disabled'
+          - system_maintenance_molecule_tls_timer_active.rc != 0
+          - system_maintenance_molecule_tls_timer_active.stdout | trim == 'inactive'
+          - system_maintenance_molecule_tls_preflight.rc == 1
+          - system_maintenance_molecule_tls_issuer_before.stdout | trim == 'inactive'
+          - system_maintenance_molecule_tls_issuer_after.stdout | trim == 'inactive'
+
+    - name: Test manual renewal waiting for successful and failed existing jobs
+      ansible.builtin.include_tasks: tasks/tls-manual-wait.yml
+      loop: [0, 7]
+      loop_control:
+        loop_var: system_maintenance_molecule_tls_wait_exit_code
+
+    - name: Create disposable installed-runtime test root
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: homelab-tls-evidence-
+      register: system_maintenance_molecule_tls_test_root
+
+    - name: Exercise installed TLS runtime with distribution Python
+      block:
+        - name: Create disposable repository-shaped test directories
+          ansible.builtin.file:
+            path: "{{ system_maintenance_molecule_tls_test_root.path }}/{{ item }}"
+            state: directory
+            mode: '0755'
+          loop:
+            - tests/tls
+            - roles/tls_automation/files
+
+        - name: Link the installed runtime into the disposable test tree
+          ansible.builtin.file:
+            src: /usr/local/lib/homelab-tls/tls_runtime
+            dest: "{{ system_maintenance_molecule_tls_test_root.path }}/roles/tls_automation/files/tls_runtime"
+            state: link
+
+        - name: Copy the secret-free TLS unit tests into disposable state
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../../../../tests/tls/"
+            dest: "{{ system_maintenance_molecule_tls_test_root.path }}/tests/tls/"
+            mode: preserve
+
+        - name: Run TLS tests with distribution Python and cryptography
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -m
+              - unittest
+              - discover
+              - -s
+              - "{{ system_maintenance_molecule_tls_test_root.path }}/tests/tls"
+              - -p
+              - test_*.py
+              - -v
+          changed_when: false
+      always:
+        - name: Remove disposable TLS test state
+          ansible.builtin.file:
+            path: "{{ system_maintenance_molecule_tls_test_root.path }}"
+            state: absent
