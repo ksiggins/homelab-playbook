@@ -177,6 +177,21 @@ encrypted fixtures in an isolated temporary environment, exercises the real
 Ansible SOPS loading path, and removes its run-owned state. Neither command
 accesses Keychain or protected inventory plaintext.
 
+### TLS automation and test
+
+`tls provision` through the playbook gateway installs host capability and
+reconciles declared configuration. The timer is disabled by default; enabling
+it authorizes ongoing DNS and certificate mutations and requires explicit
+operator direction. `tls renew` performs one issuance/publication attempt and
+can mutate DNS, certificate files, and Caddy runtime state. `tls verify` observes
+installed metadata and TLS endpoints without issuing or reloading.
+
+`mise run test:tls` is a controlled local experiment. It creates ephemeral
+certificate authorities, temporary files, and loopback TLS listeners, then
+removes them. It has no inventory target or Cloudflare credential. The
+registered Molecule baseline test exercises installation in disposable Linux
+containers. These tests provide offline evidence, not live renewal evidence.
+
 ### Direct secret editing
 
 ```text
