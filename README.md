@@ -103,7 +103,7 @@ service with no HTTPS listener. Activating routes requires operator-supplied
 private inputs and externally deployed certificates. Caddy is an unpinned system
 package upgraded through existing OS maintenance; package updates may restart
 the shared service. See the [proxy README](playbooks/reverse-proxy/README.md)
-and [operator guide](docs/guides/reverse-proxy.md).
+for inputs, prerequisites, and troubleshooting.
 
 ## Inventories
 

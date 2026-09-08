@@ -169,7 +169,8 @@ below `/etc/caddy/tls/<certificate_name>/`. The `current` symlink selects one
 version containing `fullchain.pem` and `privkey.pem`. Caddy references these
 stable paths; switching the directory pointer selects the pair together.
 Targets must remain below that certificate's root and have the required owner,
-group, permissions, and platform labels.
+group, permissions, and platform labels. The `current` symlink itself must also
+be owned by `root:caddy`.
 
 Issue #25 creates the shared directory and validates the consumption interface.
 It neither generates production certificates nor copies their contents through
@@ -184,6 +185,14 @@ post-deployment TLS verification. Its deployment procedure retains the previous
 version and restores the pointer and running certificate after failure. The
 proxy's reload entry point supports use inside this transaction without taking
 the same lock twice. Direct operator reloads acquire the lock themselves.
+
+The helper is `/usr/local/libexec/homelab-reverse-proxy`; the shared lock is
+`/run/lock/homelab-reverse-proxy.lock`, owned by root with mode `0600`.
+`reload` acquires this lock. The certificate automation integration forms
+`reload --lock-held` and `verify --lock-held` require the existing exclusive lock
+inherited on file descriptor 9. The helper validates that inherited lock;
+the flag alone does not grant execution authority. Certificate automation must
+retain it through version selection, reload, and served-certificate verification.
 
 The reload entry point validates as the service account, then calls
 `caddy reload --force` against the permission-protected Unix admin socket.
