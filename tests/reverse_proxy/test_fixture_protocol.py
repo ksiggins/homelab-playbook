@@ -135,6 +135,13 @@ class FixtureProtocolTests(unittest.TestCase):
             helper.chmod(0o755)
             calls.write_text("", encoding="utf-8")
 
+            def observe_failure():
+                with lock.open() as probe:
+                    with self.assertRaises(BlockingIOError):
+                        import fcntl
+                        fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                return {"served_version": "v1"}
+
             report = rotation.rotate(
                 lock_path=lock,
                 selected_path=selected,
@@ -143,12 +150,14 @@ class FixtureProtocolTests(unittest.TestCase):
                 helper_arguments=[str(calls), str(lock)],
                 uid=os.getuid(),
                 gid=os.getgid(),
+                failure_observer=observe_failure,
             )
             self.assertEqual(
                 {
                     "detail": "served certificate is stale",
                     "result": "failed",
                     "stage": "verify",
+                    "observations": {"served_version": "v1"},
                 },
                 report,
             )

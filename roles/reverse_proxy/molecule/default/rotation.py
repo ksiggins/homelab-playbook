@@ -3,11 +3,15 @@
 
 import fcntl
 import grp
+import hashlib
 import json
 import os
 from pathlib import Path
+import socket
+import ssl
 import subprocess
 import sys
+import time
 
 
 LOCK_PATH = Path("/run/lock/homelab-reverse-proxy.lock")
@@ -21,6 +25,56 @@ def _detail(result):
     return value[:240] if value else "helper returned no diagnostic"
 
 
+def observe_fixture():
+    """Observe only disposable fixture certificates, without replaying activation."""
+    base = SELECTED_PATH.parent
+    fingerprints = {}
+    for version in ("v1", "v2"):
+        pem = (base / version / "fullchain.pem").read_text()
+        fingerprints[version] = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+
+    def identify(pem):
+        fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+        return next((version for version, value in fingerprints.items() if value == fingerprint), "unrecognized")
+
+    service_view = "unavailable"
+    try:
+        pid = subprocess.run(
+            ["systemctl", "show", "--property=MainPID", "--value", "caddy.service"],
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip()
+        if pid.isdigit() and int(pid) > 0:
+            service_certificate = Path("/proc") / pid / "root" / SELECTED_PATH.relative_to("/") / "fullchain.pem"
+            service_view = identify(service_certificate.read_text())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    context = ssl.create_default_context(cafile="/var/lib/reverse-proxy-molecule/ca.pem")
+    address = socket.gethostbyname(socket.gethostname())
+    samples = []
+    started = time.monotonic()
+    for delay in (0, 1, 4):
+        time.sleep(delay)
+        for hostname in ("app.example.test", "other.example.test"):
+            sample = {"hostname": hostname, "elapsed_seconds": round(time.monotonic() - started, 3)}
+            try:
+                with socket.create_connection((address, 443), timeout=2) as connection:
+                    with context.wrap_socket(connection, server_hostname=hostname) as tls:
+                        fingerprint = hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()
+                sample["served_version"] = next(
+                    (version for version, value in fingerprints.items() if value == fingerprint),
+                    "unrecognized",
+                )
+            except OSError as error:
+                sample["error"] = type(error).__name__
+            samples.append(sample)
+    return {
+        "selected_version": SELECTED_PATH.resolve().name,
+        "service_filesystem_version": service_view,
+        "fixture_versions_differ": fingerprints["v1"] != fingerprints["v2"],
+        "samples": samples,
+    }
+
+
 def rotate(
     *,
     lock_path,
@@ -30,6 +84,7 @@ def rotate(
     helper_arguments,
     uid,
     gid,
+    failure_observer=None,
 ):
     saved_descriptor = None
     try:
@@ -63,7 +118,13 @@ def rotate(
                 pass_fds=(INHERITED_LOCK_FD,),
             )
             if result.returncode:
-                return {"detail": _detail(result), "result": "failed", "stage": stage}
+                report = {"detail": _detail(result), "result": "failed", "stage": stage}
+                if failure_observer is not None:
+                    try:
+                        report["observations"] = failure_observer()
+                    except Exception as error:
+                        report["observation_error"] = type(error).__name__
+                return report
         return {"result": "passed", "stage": "verify"}
     finally:
         if descriptor == INHERITED_LOCK_FD:
@@ -82,6 +143,7 @@ def main():
         helper_arguments=["--lock-held"],
         uid=0,
         gid=grp.getgrnam("caddy").gr_gid,
+        failure_observer=observe_fixture,
     )
     print(json.dumps(report, sort_keys=True))
     return 0 if report["result"] == "passed" else 1
