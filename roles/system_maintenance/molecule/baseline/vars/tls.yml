@@ -1,0 +1,11 @@
+---
+tls_automation_namespace: infra.example.com  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+tls_automation_email: acme@example.com  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+tls_automation_reader_gid: 2001  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+tls_automation_endpoints:  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+  - hostname: modem.infra.example.com
+    address: 192.0.2.10
+    port: 443
+tls_automation_issuer_uid: 2010  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+tls_automation_issuer_gid: 2010  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.
+tls_automation_timer_enabled: false  # noqa var-naming[no-role-prefix] - Public input to the TLS role under test.

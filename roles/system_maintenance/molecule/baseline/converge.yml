@@ -101,3 +101,14 @@
           [Container]
           Image=docker.io/library/alpine:3.22.1
           Exec=/bin/true
+
+- name: Converge disabled off-cluster TLS capability without credentials
+  hosts: os_managed
+  gather_facts: true
+  become: true
+  vars_files:
+    - vars/tls.yml
+  tasks:
+    - name: Install the off-cluster TLS capability
+      ansible.builtin.import_role:
+        name: tls_automation
