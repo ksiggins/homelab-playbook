@@ -217,6 +217,7 @@ class Activator:
     def runtime_configuration(self, configuration):
         runtime = json.loads(json.dumps(configuration))
         certificates = runtime.get("apps", {}).get("tls", {}).get("certificates", {}).get("load_files", [])
+        runtime_tags = {}
         for pair in certificates:
             certificate = pair.get("certificate", "")
             match = re.fullmatch(
@@ -229,6 +230,19 @@ class Activator:
             external = Path("/") / target.relative_to(self.root)
             pair["certificate"] = str(external / "fullchain.pem")
             pair["key"] = str(external / "privkey.pem")
+            suffix = hashlib.sha256(pair["certificate"].encode()).hexdigest()[:16]
+            for tag in pair.get("tags", []):
+                runtime_tags[tag] = tag + "-" + suffix
+            pair["tags"] = [runtime_tags.get(tag, tag) for tag in pair.get("tags", [])]
+        servers = runtime.get("apps", {}).get("http", {}).get("servers", {})
+        for server in servers.values():
+            for policy in server.get("tls_connection_policies", []):
+                selection = policy.get("certificate_selection", {})
+                for field in ("any_tag", "all_tags"):
+                    if field in selection:
+                        selection[field] = [
+                            runtime_tags.get(tag, tag) for tag in selection[field]
+                        ]
         return runtime
 
     def reload_configuration(self, configuration):

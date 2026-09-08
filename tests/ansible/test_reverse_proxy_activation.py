@@ -512,6 +512,14 @@ class CertificateTests(ActivationFixture):
         self.assertEqual(
             "/etc/caddy/tls/app/version-two/privkey.pem", pair["key"]
         )
+        expected_tag = "cert0-" + hashlib.sha256(
+            pair["certificate"].encode()
+        ).hexdigest()[:16]
+        self.assertEqual([expected_tag], pair["tags"])
+        policy = self.commands.loaded["apps"]["http"]["servers"]["srv0"][
+            "tls_connection_policies"
+        ][0]
+        self.assertEqual([expected_tag], policy["certificate_selection"]["any_tag"])
 
     def test_verify_uses_system_trust_sni_and_current_external_leaf(self):
         self.configure_certificate()

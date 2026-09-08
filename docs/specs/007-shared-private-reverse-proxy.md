@@ -199,14 +199,16 @@ The reload entry point validates as the service account, then calls
 Forced reload is required when certificate bytes change but configuration text
 does not. Before submitting the validated configuration, the helper replaces
 each stable `current` certificate path in the runtime copy with its selected
-immutable version path. This makes a version change visible to Caddy's
-certificate cache while the committed boot configuration keeps the stable
-deployment contract. It fails if the service is inactive; it does not start a
-service as an incidental certificate-renewal action. Issue #5 owns retries,
-renewal timing, expiry monitoring, version retention, and recovery of
-interrupted certificate deployments. Git plus separately recoverable
-certificate material is sufficient to reconstruct the proxy; Caddy cache files
-are not authoritative recovery data.
+immutable version path and gives its matching TLS policy a version-specific
+certificate tag. This makes a version change visible to Caddy's certificate
+cache and prevents the policy from selecting an older cached certificate while
+the committed boot configuration keeps the stable deployment contract. It
+fails if the service is inactive; it does not start a service as an incidental
+certificate-renewal action. Issue #5 owns retries, renewal timing, expiry
+monitoring, version retention, and recovery of interrupted certificate
+deployments. Git plus separately recoverable certificate material is sufficient
+to reconstruct the proxy; Caddy cache files are not authoritative recovery
+data.
 
 ## Configuration activation and failure behavior
 
