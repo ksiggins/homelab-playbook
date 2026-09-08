@@ -2,9 +2,11 @@
 
 The selected [hybrid TLS design](../specs/007-off-cluster-tls-trust.md) includes
 private HTTPS access to the S34 through the shared Caddy proxy on NUC #4.
-The proxy and certificate deployment are not implemented in this checkout yet.
-Use this guide as the configuration and acceptance procedure when those
-components become available; it does not claim an operational route.
+The host issuer and certificate publication capability are implemented with
+automatic renewal disabled by default; see the
+[TLS playbook README](../../playbooks/tls/README.md). The Caddy adapter and live
+modem route remain undeployed. Use this guide for their configuration and
+acceptance procedure; it does not claim an operational route.
 
 ARRIS documents its local Web Manager and browser certificate warnings, but
 provides no certificate upload or automated renewal procedure in those guides.

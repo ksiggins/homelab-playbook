@@ -2,8 +2,10 @@
 
 Use UniFi OS certificate management to issue and renew a separate publicly
 trusted certificate on each UniFi console. This is the operator-managed UniFi
-part of the hybrid TLS design selected for issue #5. NUC #4 certificate automation
-and its Caddy integration remain separate implementation work.
+part of the hybrid TLS design selected for issue #5. The NUC #4 host issuer and
+publication capability are implemented with automatic renewal disabled by default;
+see the [TLS playbook README](../../playbooks/tls/README.md). Its Caddy adapter
+and live deployment remain separate integration work.
 
 UniFi consoles retain their own certificates and Cloudflare tokens. They do not
 receive the Caddy wildcard private key or depend on NUC #4 for renewal. Caddy is

@@ -3,8 +3,9 @@
 Issue: [#5](https://github.com/supermorphic/homelab-playbook/issues/5)
 
 Status: hybrid topology and architecture approved with review refinements below.
-The guides describe operator procedures. The NUC #4 issuer, certificate handoff,
-and modem route are not implemented by this design document.
+The guides describe operator procedures. Host automation is implemented by the
+`tls_automation` role and `tls` playbooks. Live deployment and the Caddy adapter
+remain dependent on issue #25; the modem route is not yet deployed.
 
 ## Decision and ownership
 
@@ -64,7 +65,7 @@ Local DNS overrides must preserve public resolution of challenge records.
 
 ## NUC #4 issuance model
 
-The proposed implementation uses a pinned lego binary, a dedicated non-login
+The implementation uses pinned lego 5.4.1, a dedicated non-login
 host service account, and a systemd timer. Ansible manages installation,
 configuration, permissions, and units. Pin an exact release and verified artifact
 checksum for each supported architecture; never fetch a floating latest binary
@@ -86,7 +87,11 @@ Run renewal eligibility through the pinned client's supported behavior, with
 ACME Renewal Information when available and a fallback threshold appropriate to
 certificate lifetime. Do not hard-code an assumption that all certificates last
 90 days. The implementation plan must bind these settings to the selected
-client version and test its CLI contract.
+client version and test its CLI contract. Version 5.4.1 uses `run` for both
+issuance and renewal. Leave ARI enabled and omit `--renew-days`: the client's
+fallback renews with one third of certificate lifetime remaining, or one half
+for lifetimes up to ten days. The systemd timer supplies jitter; the worker uses
+`--no-random-sleep` and `--ari-wait-to-renew-duration 0s` to bound execution.
 
 Serialize all local issuance and deployment attempts. Do not force renewal on
 every Ansible run. Retain client account state so ordinary provisioning and
@@ -140,7 +145,14 @@ The coordinator performs this sequence under one root-owned exclusive lock:
    It generates publication identifiers and destinations itself beneath the
    approved root. Caddy validation and reload use fixed argument vectors in a
    root-owned integration adapter installed for issue #25's selected runtime;
-   they are never shell strings or issuer-controlled arguments.
+   they are never shell strings or issuer-controlled arguments. The adapter is
+   fixed at `/usr/local/libexec/homelab-tls-caddy`. Its only actions are
+   `validate <root-owned-candidate-directory>`, `reload`, and `deactivate`.
+   `reload` must force certificate file reopening. `deactivate` removes a failed
+   first deployment's routes and proves them inactive when no previous
+   generation exists. Issue #25 implements these operations for its selected
+   runtime. Missing integration fails before issuance; no successful stub is
+   installed.
 5. Record issuance and publication results separately. A failed issuance does
    not prevent validation and retry of an already-issued pending certificate,
    but remains visible in the overall result. No valid pending candidate means
@@ -195,6 +207,13 @@ Never use Common Name as a substitute for SAN validation. Reject staging
 certificates from production publication. Never trust issuer-provided metadata
 alone as the validation oracle.
 
+An expired previous generation must not block a valid replacement. Historical
+validation of an administrator-owned published generation may permit past
+validity while retaining its key, exact SAN, server-purpose, and trust checks.
+Fresh candidates and served TLS handshakes always require current validity.
+A changed full chain must be published even when the leaf fingerprint is
+unchanged; only identical validated material qualifies for the no-op path.
+
 Repeat ownership, target-path, and active-generation checks immediately before
 switching. Validate Caddy configuration with the candidate generation before
 activation. After activation, force Caddy to reload certificate files even when
@@ -210,6 +229,26 @@ On reload or certificate-verification failure, restore the previous generation,
 reload it, and verify restoration. Preserve both the original failure and any
 restoration failure. If no prior generation exists, leave the unverified route
 inactive and report the incomplete first deployment.
+
+If restoration fails, a later reconciliation can retry the retained replacement.
+It repeats current certificate validation, minimum remaining lifetime, adapter
+preflight, atomic publication, and fresh served-certificate verification before
+completing recovery. Durable retry states preserve both prior failure outcomes
+across interruption. Successful retained-candidate recovery does not start a new
+issuance operation. If neither generation is usable, the journal remains and
+blocks issuance; recovery errors never authorize a new order. A future workflow
+that abandons such a transaction must first establish verified route deactivation
+and a durable terminal transition.
+
+Interruption during generation creation or retirement must leave the active
+generation complete and the transaction recoverable. Record completed recovery
+durably before cleanup, and keep partial cleanup artifacts outside the published
+root. Retain separate, credential-free issuance, activation, and restoration
+outcomes for the current attempt instead of leaving a stale success status.
+After proving the private directory boundary under the exclusive lock, write an
+in-progress status before preflight. Replace it with a bounded preflight failure
+when possible; an interrupted attempt remains in progress. Observational
+verification and a caller that cannot acquire the lock never replace status.
 
 Reconcile pending publication on subsequent timer runs even when no new
 certificate is issued. Issuance and deployment outcomes remain separate: a
@@ -237,13 +276,18 @@ and Caddy must remain optional for direct modem recovery access.
 
 ## Operator interface and validation
 
-Propose `tls provision`, `tls renew`, and `tls verify` through the canonical
+Use `tls provision`, `tls renew`, and `tls verify` through the canonical
 `mise run playbook -- <playbook> <action> <inventory> [ansible-args...]` gateway.
-These are proposed interfaces, not currently available commands.
+The [TLS playbook README](../../playbooks/tls/README.md) defines their inputs
+and the disabled installation boundary.
 
 - `provision` installs and reconciles local capability and declared configuration.
   Enabling its timer grants ongoing issuance/deployment intent and must be
   explicit in the operator's target authorization and configuration.
+  The timer defaults to disabled. Enabling it requires the fixed Caddy adapter,
+  an already published certificate, and successful observational verification.
+  Bootstrap the first certificate with an explicitly authorized `tls renew`
+  after the adapter is installed, then enable automatic renewal.
 - `renew` runs one bounded renewal/deployment reconciliation, including retries
   for an already-issued pending certificate. It can mutate DNS and certificate
   state and is not an observational check.
@@ -252,7 +296,9 @@ These are proposed interfaces, not currently available commands.
 
 Extend guarded host-action validation to this family. Production and staging
 playbook execution remains separately authorized for the exact target, action,
-and arguments. Normal operation uses the production issuer. An explicitly
+and arguments. The current TLS gateway accepts only the production inventory;
+staging and frozen inventories remain unavailable to this command family.
+Normal operation uses the production issuer. An explicitly
 selected ACME staging experiment uses separate account/state/output directories
 and cannot publish into the production certificate root or listener.
 
@@ -310,6 +356,7 @@ files to it. Resolve that consumer before closing the full issue.
 - [Command lifecycle](../reference/repository-command-lifecycle.md)
 - [Shared proxy issue #25](https://github.com/supermorphic/homelab-playbook/issues/25)
 - [lego certificate operations](https://go-acme.github.io/lego/obtain/)
+- [Pinned lego 5.4.1 renewal behavior](https://github.com/go-acme/lego/blob/v5.4.1/cmd/cmd_run_renew.go)
 - [lego Cloudflare provider](https://go-acme.github.io/lego/dns/cloudflare/)
 - [Caddy reload behavior](https://caddyserver.com/docs/command-line#caddy-reload)
 - [Caddy HTTPS transport](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#the-http-transport)
