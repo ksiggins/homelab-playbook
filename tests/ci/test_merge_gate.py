@@ -491,7 +491,7 @@ class WorkflowContractTests(unittest.TestCase):
 
         self.assertTrue(workflow_observability_errors(mutated_workflow))
 
-    def test_molecule_runs_an_exact_bounded_four_job_matrix(self) -> None:
+    def test_molecule_runs_an_exact_bounded_six_job_matrix(self) -> None:
         self.assertIn("needs: classify", self.molecule)
         self.assertEqual(
             ["needs.classify.outputs.run_molecule == 'true'"],
@@ -513,6 +513,10 @@ class WorkflowContractTests(unittest.TestCase):
                 "          - selector: system_maintenance/baseline",
                 "            platform: debian13",
                 "          - selector: system_maintenance/baseline",
+                "            platform: rockylinux9",
+                "          - selector: reverse_proxy/default",
+                "            platform: debian13",
+                "          - selector: reverse_proxy/default",
                 "            platform: rockylinux9",
             ]
         )

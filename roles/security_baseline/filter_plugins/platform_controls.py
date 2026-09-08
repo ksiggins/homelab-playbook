@@ -76,6 +76,15 @@ def security_baseline_firewall_rules(payload: Mapping[str, object]) -> list[str]
                 f'rule family="{"ipv6" if ":" in source else "ipv4"}" '
                 f'source address="{source}" service name="{service}" accept'
             )
+    proxy_routes = payload.get("reverse_proxy_routes", [])
+    if not isinstance(proxy_routes, list):
+        raise ValueError("reverse proxy routes must be a list")
+    if proxy_routes:
+        for source in _validate_private_sources(payload.get("reverse_proxy_sources")):
+            rules.append(
+                f'rule family="{"ipv6" if ":" in source else "ipv4"}" '
+                f'source address="{source}" port port="443" protocol="tcp" accept'
+            )
     return rules
 
 

@@ -1,0 +1,86 @@
+---
+- name: Record the unexpected scenario failure stage
+  ansible.builtin.set_fact:
+    reverse_proxy_molecule_failed_task: >-
+      {{ ansible_failed_task.name | default('unknown task') }}
+    reverse_proxy_molecule_failed_rc: >-
+      {{ ansible_failed_result.rc | default('unavailable') }}
+
+- name: Classify bounded diagnostics for the failed stage
+  ansible.builtin.set_fact:
+    reverse_proxy_molecule_firewall_failure: >-
+      {{ 'firewall' in (reverse_proxy_molecule_failed_task | lower) }}
+    reverse_proxy_molecule_replay_activation: >-
+      {{ reverse_proxy_molecule_diagnostic_action != 'apply'
+         or reverse_proxy_molecule_failed_task
+            == 'Activate candidate reverse proxy configuration' }}
+
+- name: Repeat the activation command for its safe diagnostic
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/homelab-reverse-proxy
+      - "{{ reverse_proxy_molecule_diagnostic_action }}"
+  register: reverse_proxy_molecule_helper_diagnostic
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_molecule_replay_activation
+
+- name: Inspect the synthetic candidate through each static helper stage
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/reverse-proxy-molecule-diagnose.py
+      - runtime
+  register: reverse_proxy_molecule_candidate_diagnostic
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_molecule_replay_activation
+
+- name: Read bounded Caddy service diagnostics
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/journalctl
+      - --unit=caddy.service
+      - --lines=20
+      - --no-pager
+      - --output=cat
+  register: reverse_proxy_molecule_service_diagnostic
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_molecule_replay_activation
+
+- name: Read bounded synthetic permanent firewall diagnostics
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/firewall-offline-cmd
+      - --zone=homelab
+      - --list-rich-rules
+  register: reverse_proxy_molecule_firewall_diagnostic
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_molecule_firewall_failure
+
+- name: Report the unexpected scenario failure
+  ansible.builtin.fail:
+    msg: >-
+      {{ reverse_proxy_molecule_diagnostic_context }} failed at
+      {{ reverse_proxy_molecule_failed_task }} (rc
+      {{ reverse_proxy_molecule_failed_rc }}). Repeated helper
+      {{ reverse_proxy_molecule_diagnostic_action }} rc
+      {{ reverse_proxy_molecule_helper_diagnostic.rc | default('not run') }}:
+      {{ reverse_proxy_molecule_helper_diagnostic.stderr
+         | default('not run') | trim }}.
+      Static candidate diagnostic rc
+      {{ reverse_proxy_molecule_candidate_diagnostic.rc | default('not run') }}:
+      {{ reverse_proxy_molecule_candidate_diagnostic.stdout
+         | default('not run') | trim }}
+      {{ reverse_proxy_molecule_candidate_diagnostic.stderr
+         | default('') | trim }}.
+      Recent synthetic Caddy log:
+      {{ reverse_proxy_molecule_service_diagnostic.stdout
+         | default('not run') | trim }}.
+      Permanent synthetic firewall actual rules (rc
+      {{ reverse_proxy_molecule_firewall_diagnostic.rc | default('not run') }}):
+      {{ reverse_proxy_molecule_firewall_diagnostic.stdout_lines
+         | default([]) | to_json }}; desired rules:
+      {{ security_baseline_firewall_desired_rules
+         | default([]) | to_json }}.

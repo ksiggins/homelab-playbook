@@ -72,6 +72,25 @@ BASELINE_PLATFORMS = (
     ),
 )
 
+REVERSE_PROXY_PLATFORMS = (
+    Platform(
+        name="debian13",
+        base_image="docker.io/library/debian:13",
+        image="localhost/homelab-playbook-reverse-proxy-debian13:local",
+        container="homelab-playbook-reverse-proxy-debian13",
+        container_command="/usr/lib/systemd/systemd",
+        containerfile=Path("Containerfile.debian13"),
+    ),
+    Platform(
+        name="rockylinux9",
+        base_image="docker.io/rockylinux/rockylinux:9",
+        image="localhost/homelab-playbook-reverse-proxy-rockylinux9:local",
+        container="homelab-playbook-reverse-proxy-rockylinux9",
+        container_command="/usr/lib/systemd/systemd",
+        containerfile=Path("Containerfile.rockylinux9"),
+    ),
+)
+
 
 @dataclass(frozen=True)
 class Scenario:
@@ -93,6 +112,12 @@ SCENARIOS: Mapping[str, Scenario] = MappingProxyType({
         role_name="system_maintenance",
         scenario_name="baseline",
         platforms=BASELINE_PLATFORMS,
+    ),
+    "reverse_proxy/default": Scenario(
+        selector="reverse_proxy/default",
+        role_name="reverse_proxy",
+        scenario_name="default",
+        platforms=REVERSE_PROXY_PLATFORMS,
     ),
 })
 
@@ -239,7 +264,7 @@ class PlatformResult:
 def _parser() -> argparse.ArgumentParser:
     selectors = ", ".join(SCENARIOS)
     parser = argparse.ArgumentParser(
-        description="Test system_maintenance in rootless Podman containers",
+        description="Test registered Ansible roles in rootless Podman containers",
     )
     parser.add_argument(
         "selector",

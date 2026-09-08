@@ -33,6 +33,7 @@ COMMANDS = {
             "--",
             "system_maintenance/baseline",
         ],
+        ["mise", "run", "test:molecule", "--", "reverse_proxy/default"],
     ],
     "full": [
         ["mise", "run", "validate:fast"],
@@ -51,6 +52,7 @@ COMMANDS = {
             "--",
             "system_maintenance/baseline",
         ],
+        ["mise", "run", "test:molecule", "--", "reverse_proxy/default"],
     ],
 }
 

@@ -165,6 +165,10 @@ jobs:
             platform: debian13
           - selector: system_maintenance/baseline
             platform: rockylinux9
+          - selector: reverse_proxy/default
+            platform: debian13
+          - selector: reverse_proxy/default
+            platform: rockylinux9
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

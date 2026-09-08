@@ -1,0 +1,320 @@
+---
+- name: Prepare disposable reverse proxy fixtures
+  hosts: reverse_proxy_hosts
+  gather_facts: true
+  become: true
+  vars:
+    reverse_proxy_molecule_fixture_root: /var/lib/reverse-proxy-molecule
+  tasks:
+    - name: Discover the rootless container private address
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - >-
+            import ipaddress, socket;
+            values={entry[4][0] for entry in
+            socket.getaddrinfo(socket.gethostname(), 0, socket.AF_INET)};
+            print(next(value for value in sorted(values)
+            if ipaddress.ip_address(value).is_private
+            and not ipaddress.ip_address(value).is_loopback))
+      register: reverse_proxy_molecule_private_address
+      changed_when: false
+
+    - name: Record the rootless container private address
+      ansible.builtin.set_fact:
+        reverse_proxy_molecule_address: >-
+          {{ reverse_proxy_molecule_private_address.stdout | trim }}
+    - name: Assert the container has a private bind address
+      ansible.builtin.assert:
+        that:
+          - >-
+            reverse_proxy_molecule_address is match(
+              '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)'
+            )
+        fail_msg: The rootless container did not receive an RFC1918 address
+
+    - name: Create disposable certificate and backend directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop:
+        - "{{ reverse_proxy_molecule_fixture_root }}"
+        - /etc/caddy
+        - /etc/caddy/tls
+        - /etc/caddy/tls/fixture
+        - /etc/caddy/tls/fixture/v1
+        - /etc/caddy/tls/fixture/v2
+        - /etc/caddy/tls/fixture/expired
+        - /etc/caddy/tls/fixture/hostname-mismatch
+        - /etc/caddy/tls/fixture/key-mismatch
+
+    - name: Create executable fixture directory
+      ansible.builtin.file:
+        path: /usr/local/libexec
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install disposable OpenSSL request definitions
+      ansible.builtin.copy:
+        dest: "{{ reverse_proxy_molecule_fixture_root }}/{{ item.name }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - name: ca.cnf
+          content: |
+            [req]
+            distinguished_name = dn
+            x509_extensions = ca
+            prompt = no
+            [dn]
+            CN = Molecule Reverse Proxy CA
+            [ca]
+            basicConstraints = critical,CA:TRUE
+            keyUsage = critical,keyCertSign,cRLSign
+            subjectKeyIdentifier = hash
+        - name: leaf.cnf
+          content: |
+            subjectAltName = DNS:app.example.test,DNS:other.example.test
+            basicConstraints = critical,CA:FALSE
+            keyUsage = critical,digitalSignature,keyEncipherment
+            extendedKeyUsage = serverAuth
+            subjectKeyIdentifier = hash
+            authorityKeyIdentifier = keyid,issuer
+        - name: hostname-mismatch.cnf
+          content: |
+            subjectAltName = DNS:unrelated.example.test
+            basicConstraints = critical,CA:FALSE
+            keyUsage = critical,digitalSignature,keyEncipherment
+            extendedKeyUsage = serverAuth
+            subjectKeyIdentifier = hash
+            authorityKeyIdentifier = keyid,issuer
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Generate the disposable certificate authority
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -x509
+          - -newkey
+          - rsa:2048
+          - -nodes
+          - -days
+          - '7'
+          - -config
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.cnf"
+          - -keyout
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.key"
+          - -out
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+        creates: "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+
+    - name: Generate disposable route private keys and requests
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -new
+          - -newkey
+          - rsa:2048
+          - -nodes
+          - -subj
+          - /CN=app.example.test
+          - -keyout
+          - "/etc/caddy/tls/fixture/{{ item }}/privkey.pem"
+          - -out
+          - "{{ reverse_proxy_molecule_fixture_root }}/{{ item }}.csr"
+        creates: "/etc/caddy/tls/fixture/{{ item }}/privkey.pem"
+      loop:
+        - v1
+        - v2
+        - expired
+        - hostname-mismatch
+
+    - name: Sign disposable route certificates
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -req
+          - -days
+          - '7'
+          - -in
+          - "{{ reverse_proxy_molecule_fixture_root }}/{{ item.version }}.csr"
+          - -CA
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+          - -CAkey
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.key"
+          - -set_serial
+          - "{{ item.serial }}"
+          - -extfile
+          - "{{ reverse_proxy_molecule_fixture_root }}/leaf.cnf"
+          - -out
+          - "/etc/caddy/tls/fixture/{{ item.version }}/fullchain.pem"
+        creates: "/etc/caddy/tls/fixture/{{ item.version }}/fullchain.pem"
+      loop:
+        - version: v1
+          serial: '1001'
+        - version: v2
+          serial: '1002'
+      loop_control:
+        label: "{{ item.version }}"
+
+    - name: Sign a disposable expired route certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -req
+          - -days
+          - '0'
+          - -in
+          - "{{ reverse_proxy_molecule_fixture_root }}/expired.csr"
+          - -CA
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+          - -CAkey
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.key"
+          - -set_serial
+          - '1003'
+          - -extfile
+          - "{{ reverse_proxy_molecule_fixture_root }}/leaf.cnf"
+          - -out
+          - /etc/caddy/tls/fixture/expired/fullchain.pem
+        creates: /etc/caddy/tls/fixture/expired/fullchain.pem
+
+    - name: Sign a disposable hostname-incompatible route certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -req
+          - -days
+          - '7'
+          - -in
+          - "{{ reverse_proxy_molecule_fixture_root }}/hostname-mismatch.csr"
+          - -CA
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+          - -CAkey
+          - "{{ reverse_proxy_molecule_fixture_root }}/ca.key"
+          - -set_serial
+          - '1004'
+          - -extfile
+          - "{{ reverse_proxy_molecule_fixture_root }}/hostname-mismatch.cnf"
+          - -out
+          - /etc/caddy/tls/fixture/hostname-mismatch/fullchain.pem
+        creates: /etc/caddy/tls/fixture/hostname-mismatch/fullchain.pem
+
+    - name: Assemble disposable certificate failure pairs
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - src: /etc/caddy/tls/fixture/v1/fullchain.pem
+          dest: /etc/caddy/tls/fixture/key-mismatch/fullchain.pem
+        - src: /etc/caddy/tls/fixture/v2/privkey.pem
+          dest: /etc/caddy/tls/fixture/key-mismatch/privkey.pem
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Select the first disposable certificate version
+      ansible.builtin.file:
+        src: v1
+        dest: /etc/caddy/tls/fixture/current
+        state: link
+        owner: root
+        group: root
+        follow: false
+        force: true
+
+    - name: Install the disposable CA in the Debian trust store
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+        dest: /usr/local/share/ca-certificates/reverse-proxy-molecule.crt
+        owner: root
+        group: root
+        mode: '0644'
+      register: reverse_proxy_molecule_debian_ca
+      when: ansible_facts.os_family == 'Debian'
+
+    - name: Refresh the Debian trust store
+      ansible.builtin.command:
+        argv:
+          - update-ca-certificates
+      when:
+        - ansible_facts.os_family == 'Debian'
+        - reverse_proxy_molecule_debian_ca is changed
+      changed_when: true
+
+    - name: Install the disposable CA in the Rocky trust store
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ reverse_proxy_molecule_fixture_root }}/ca.pem"
+        dest: /etc/pki/ca-trust/source/anchors/reverse-proxy-molecule.pem
+        owner: root
+        group: root
+        mode: '0644'
+      register: reverse_proxy_molecule_rocky_ca
+      when: ansible_facts.os_family == 'RedHat'
+
+    - name: Refresh the Rocky trust store
+      ansible.builtin.command:
+        argv:
+          - update-ca-trust
+      when:
+        - ansible_facts.os_family == 'RedHat'
+        - reverse_proxy_molecule_rocky_ca is changed
+      changed_when: true
+
+    - name: Install the disposable protocol programs
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/usr/local/libexec/reverse-proxy-molecule-{{ item }}"
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - backend.py
+        - diagnose.py
+        - probe.py
+
+    - name: Install the disposable backend unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/reverse-proxy-molecule-backend.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Disposable reverse proxy Molecule backend
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/python3 /usr/local/libexec/reverse-proxy-molecule-backend.py --port 18080
+          User=nobody
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      register: reverse_proxy_molecule_backend_unit
+
+    - name: Start the disposable backend
+      ansible.builtin.systemd_service:
+        name: reverse-proxy-molecule-backend.service
+        daemon_reload: "{{ reverse_proxy_molecule_backend_unit is changed }}"
+        enabled: true
+        state: started

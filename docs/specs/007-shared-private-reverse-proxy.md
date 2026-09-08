@@ -2,9 +2,9 @@
 
 Issue: [#25 Shared private reverse proxy for NUC #4 services](https://github.com/supermorphic/homelab-playbook/issues/25)
 
-Status: The operator approved the host-level Caddy direction and ingress,
-certificate, and reload contracts. This written design is pending review.
-It is not evidence of implementation or live deployment.
+Status: Approved implementation design, including the operator's subsequent
+decision to use unpinned distribution packages and the existing OS maintenance
+lifecycle. It is not evidence of live deployment.
 
 ## Purpose and scope
 
@@ -49,11 +49,17 @@ benefit for this service that outweighs the additional mechanisms.
 
 ## Service installation and ownership
 
-Install a standard upstream Caddy build without DNS-provider plugins. Pin its
-release and per-architecture archive checksums in public version inputs. Verify
-the download before installing a root-owned executable. Do not use an automatic
-Caddy upgrade command or a floating container image. The implementation records
-the selected release and checksums before introducing executable deployment.
+Install the unpinned `caddy` distribution package without DNS-provider plugins.
+Use Debian 13's native APT repository. Rocky Linux 9 uses its compatible EPEL
+package, with the signed EPEL repository explicitly established by the role.
+The demonstrated need for EPEL is the Caddy package; no upstream Caddy repository
+or standalone binary installer is introduced. Installation uses `state: present`;
+existing OS maintenance owns package upgrades. Daily security updates retain
+their existing distribution policy and depend on repository security metadata.
+Do not use `caddy upgrade`, package holds, or version locks. Verification records
+the installed version and validates required capabilities instead of requiring
+one exact release. Package upgrades can restart the shared proxy and affect all
+routes briefly; configuration rollback does not promise package-version rollback.
 
 Use a dedicated `caddy` non-login system account and private group. It has no
 sudo, SSH keys, Podman allocation, application-group membership, or access to
@@ -61,6 +67,11 @@ certificate-issuer credentials. Reject an incompatible existing identity or
 unmanaged Caddy installation instead of silently taking it over. Numeric IDs
 are not a cross-host persistence contract for this host service; certificate
 deployment establishes ownership by account and group name after reconstruction.
+
+Debian's package adds the account to `www-data` during installation and upgrades.
+Reconcile supplementary groups during provisioning and in a root startup
+precondition before Caddy executes. This keeps the dedicated identity contract
+effective after package-triggered restarts without holding back package updates.
 
 Run `caddy.service` as this identity. Limit its capability bounding and ambient
 sets to `CAP_NET_BIND_SERVICE`. Apply `NoNewPrivileges`, a private temporary
@@ -120,10 +131,12 @@ Unknown hostnames receive no application route. No forward-proxy or arbitrary
 upstream interface exists. Preserve normal Caddy HTTP and WebSocket forwarding;
 do not trust client-supplied forwarded headers as a separate upstream proxy.
 
-Set a five-minute `stream_close_delay` so successful reloads do not immediately
-close established WebSockets. A removed route rejects new connections after
-reload; existing streams may drain for at most this interval before closure.
-Acceptance cleanup verifies final absence after the drain period.
+The Debian 13 package is based on Caddy 2.6.2, which does not implement
+`stream_close_delay`. Use native WebSocket behavior: successful configuration or
+certificate reloads close established WebSockets and clients reconnect. Failed
+configuration validation must preserve existing connections. A removed route
+rejects new connections after reload. Do not add a newer package source merely
+to delay WebSocket closure.
 
 An empty route list renders an admin-only configuration with no HTTPS listener
 and no required certificate pair. Removing the final route removes ingress
@@ -132,14 +145,14 @@ allowances as well as listeners. It does not delete externally owned TLS files.
 ## Firewall integration
 
 The existing security baseline remains the sole firewall policy owner. Compose
-the proxy's HTTPS allowance through `security_baseline_firewall_services` using
-the declared client sources, while preserving other explicitly declared service
-extensions. Both OS and proxy operations must derive the same complete desired
-policy so a later OS provision does not remove a valid proxy allowance.
+the proxy's source-scoped TCP/443 allowance alongside
+`security_baseline_firewall_services`, preserving other explicitly declared
+service extensions. Both OS and proxy operations derive the same complete
+desired policy so a later OS provision does not remove a valid proxy allowance.
 
-Use a repository-owned TCP-only firewalld service definition if the platform's
-`https` definition permits any transport other than TCP/443. Read back the
-effective definition and runtime and permanent source rules. Reuse the existing
+Use explicit TCP/443 rich rules, as the baseline already does for TCP/22, to
+avoid depending on a platform's HTTP/3 service definition. Read back runtime
+and permanent source rules. Reuse the existing
 guarded firewall reconciliation and active-SSH-peer checks; do not introduce
 ad hoc rules or a second independent firewall controller.
 
@@ -241,8 +254,9 @@ Standalone verification observes identity, installed version, file metadata,
 systemd restrictions, admin-socket permissions, active configuration, listeners,
 firewall state, and served TLS identities for configured routes. It does not
 reload, repair state, pull images, issue certificates, or create test routes.
-Service and access logs use journald with the baseline retention policy; avoid
-logging request credentials, query strings, or protected configuration content.
+Service logs use journald with the baseline retention policy. HTTP access
+logging is disabled by default; do not add request credentials, query strings,
+or protected configuration content to deployment diagnostics.
 Document `systemctl status` and `journalctl -u caddy` as normal diagnostics.
 
 Register the temporary backend experiment as a `test` workflow. It creates
@@ -267,7 +281,7 @@ only generated text. Disposable Debian 13 and Rocky Linux 9 evidence covers:
 - A reload-time failure that passes static validation, disk and runtime
   rollback, interrupted-transaction recovery, and failed initial activation.
 - Forced reload serving a replacement external certificate, ordinary reload
-  draining WebSockets, and unchanged configuration producing no Ansible change.
+  reconnecting WebSockets, and unchanged configuration producing no Ansible change.
 - Test route removal, eventual stream closure, listener removal for an empty
   route list, and complete run-owned fixture cleanup even after test failure.
 
@@ -275,6 +289,12 @@ Run `mise run bootstrap` after dependency changes, focused `validate:fast` and
 `validate:ansible` during development, and `mise run ci:changed` before completion.
 Register any required container scenario in local and GitHub CI dispatch together.
 Do not weaken host restrictions to accommodate nested container limitations.
+
+The rootless proxy test containers add `SYS_PTRACE` so their administrator can
+observe Caddy-owned sockets with `ss -p`. This capability belongs to the test
+container; the managed Caddy service still receives only `CAP_NET_BIND_SERVICE`.
+Container checks establish permanent firewall configuration, not host-kernel
+firewall enforcement or enforcing SELinux behavior.
 
 Offline results do not prove private-network reachability, physical boot,
 production certificate trust, certificate renewal, or recovery from a lost host.

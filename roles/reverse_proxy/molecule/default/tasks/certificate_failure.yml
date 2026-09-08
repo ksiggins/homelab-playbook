@@ -1,0 +1,105 @@
+---
+- name: Make the selected key unreadable to Caddy
+  ansible.builtin.file:
+    path: /etc/caddy/tls/fixture/v1/privkey.pem
+    state: file
+    owner: root
+    group: caddy
+    mode: '0600'
+  when: reverse_proxy_molecule_certificate_failure.unreadable | default(false)
+
+- name: Select the rejected certificate pair
+  ansible.builtin.file:
+    src: "{{ reverse_proxy_molecule_certificate_failure.target }}"
+    dest: /etc/caddy/tls/fixture/current
+    state: link
+    owner: root
+    group: caddy
+    follow: false
+    force: true
+
+- name: Prove the selected key is unreadable to the Caddy identity
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - caddy
+      - --
+      - /usr/bin/test
+      - -r
+      - /etc/caddy/tls/fixture/current/privkey.pem
+  register: reverse_proxy_molecule_unreadable_key
+  changed_when: false
+  failed_when: false
+  when: reverse_proxy_molecule_certificate_failure.unreadable | default(false)
+
+- name: Assert the negative key is unreadable to Caddy
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_molecule_unreadable_key.rc != 0
+  when: reverse_proxy_molecule_certificate_failure.unreadable | default(false)
+
+- name: Stage the healthy configuration against rejected certificate material
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/caddy/Caddyfile
+    dest: /etc/caddy/Caddyfile.candidate
+    owner: root
+    group: caddy
+    mode: '0640'
+  no_log: true
+
+- name: Attempt activation with rejected certificate material
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/homelab-reverse-proxy
+      - apply
+  register: reverse_proxy_molecule_certificate_apply
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Restore key readability after the negative case
+  ansible.builtin.file:
+    path: /etc/caddy/tls/fixture/v1/privkey.pem
+    state: file
+    owner: root
+    group: caddy
+    mode: '0640'
+  when: reverse_proxy_molecule_certificate_failure.unreadable | default(false)
+
+- name: Restore the healthy certificate selection
+  ansible.builtin.file:
+    src: v1
+    dest: /etc/caddy/tls/fixture/current
+    state: link
+    owner: root
+    group: caddy
+    follow: false
+    force: true
+
+- name: Read boot configuration after rejected certificate material
+  ansible.builtin.stat:
+    path: /etc/caddy/Caddyfile
+    checksum_algorithm: sha256
+  register: reverse_proxy_molecule_after_certificate_failure_boot
+
+- name: Request the healthy route after rejected certificate material
+  ansible.builtin.command:
+    argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
+  register: reverse_proxy_molecule_after_certificate_failure_https
+  changed_when: false
+
+- name: Assert rejected certificate material preserved healthy state
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_molecule_certificate_apply.rc == 1
+      - >-
+        reverse_proxy_molecule_after_certificate_failure_boot.stat.checksum
+        == reverse_proxy_molecule_healthy_boot.stat.checksum
+      - >-
+        (reverse_proxy_molecule_after_certificate_failure_https.stdout | from_json)
+        .status == 200
+      - >-
+        (reverse_proxy_molecule_after_certificate_failure_https.stdout | from_json)
+        .body == 'fixture host=app.example.test path=/\n'

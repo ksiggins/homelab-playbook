@@ -55,7 +55,7 @@ description = "Operator: initialize or restore the dedicated Keychain identity"
 run = "uv run --frozen --no-sync python scripts/secrets/keychain_setup.py"
 
 [tasks."test:molecule"]
-description = "Test system_maintenance in rootless Podman containers"
+description = "Test registered Ansible roles in rootless Podman containers"
 run = "uv run --frozen --no-sync python scripts/molecule.py"
 
 [tasks."ci:changed"]
@@ -81,4 +81,5 @@ FULL_SECRET_SCAN=1 mise run validate:fast
 mise run validate:ansible
 mise run test:molecule -- system_maintenance/default
 mise run test:molecule -- system_maintenance/baseline
+mise run test:molecule -- reverse_proxy/default
 '''

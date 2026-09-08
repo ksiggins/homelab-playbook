@@ -15,6 +15,8 @@ routine playbook operations. Guides cover setup and recovery procedures.
   certificate issuance and renewal with Cloudflare DNS and direct local access.
 - [Private device proxy](guides/device-proxy.md) — Prepare private device browser
   access through Caddy for authenticated HTTPS and HTTP-only backends.
+- [Shared private HTTPS](guides/reverse-proxy.md) — Configure private routes,
+  supply external certificates, update the package, and recover Caddy.
 
 ## Reference
 

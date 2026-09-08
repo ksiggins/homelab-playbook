@@ -1,0 +1,718 @@
+---
+- name: Verify reverse proxy runtime behavior and state transitions
+  hosts: reverse_proxy_hosts
+  gather_facts: true
+  become: true
+  vars:
+    reverse_proxy_molecule_ca: /var/lib/reverse-proxy-molecule/ca.pem
+    reverse_proxy_molecule_probe: /usr/local/libexec/reverse-proxy-molecule-probe.py
+    reverse_proxy_molecule_common_probe:
+      - "{{ reverse_proxy_molecule_probe }}"
+      - --address
+      - "{{ reverse_proxy_molecule_address }}"
+      - --hostname
+      - app.example.test
+      - --ca-file
+      - "{{ reverse_proxy_molecule_ca }}"
+    reverse_proxy_molecule_routes:
+      - hostname: app.example.test
+        backend_port: 18080
+        certificate_name: fixture
+      - hostname: other.example.test
+        backend_port: 18080
+        certificate_name: fixture
+  tasks:
+    - name: Discover the rootless container private address
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - >-
+            import ipaddress, socket;
+            values={entry[4][0] for entry in
+            socket.getaddrinfo(socket.gethostname(), 0, socket.AF_INET)};
+            print(next(value for value in sorted(values)
+            if ipaddress.ip_address(value).is_private
+            and not ipaddress.ip_address(value).is_loopback))
+      register: reverse_proxy_molecule_private_address
+      changed_when: false
+
+    - name: Record the rootless container private address  # noqa: var-naming[no-role-prefix]
+      ansible.builtin.set_fact:
+        reverse_proxy_molecule_address: >-
+          {{ reverse_proxy_molecule_private_address.stdout | trim }}
+        security_baseline_management_sources:
+          - >-
+            {{ reverse_proxy_molecule_private_address.stdout | trim }}/32
+    - name: Read installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Record the installed Caddy version
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/caddy
+          - version
+      register: reverse_proxy_molecule_version
+      changed_when: false
+
+    - name: Read Debian ownership of the Caddy executable
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/dpkg-query
+          - --search
+          - /usr/bin/caddy
+      register: reverse_proxy_molecule_debian_provenance
+      changed_when: false
+      when: ansible_facts.distribution == 'Debian'
+
+    - name: Read Rocky ownership of the Caddy executable
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/rpm
+          - -qf
+          - --qf
+          - '%{NAME}\n'
+          - /usr/bin/caddy
+      register: reverse_proxy_molecule_rocky_provenance
+      changed_when: false
+      when: ansible_facts.distribution == 'Rocky'
+
+    - name: Validate the active Caddyfile with the packaged adapter
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/caddy
+          - validate
+          - --adapter
+          - caddyfile
+          - --config
+          - /etc/caddy/Caddyfile
+      changed_when: false
+
+    - name: Read active TCP and UDP listeners
+      ansible.builtin.command:
+        argv:
+          - "{{ reverse_proxy_molecule_probe }}"
+          - listeners
+          - "{{ reverse_proxy_molecule_address }}"
+      register: reverse_proxy_molecule_listeners
+      changed_when: false
+
+    - name: Assert package and listener boundaries
+      ansible.builtin.assert:
+        that:
+          - "'caddy' in ansible_facts.packages"
+          - reverse_proxy_molecule_version.stdout is match('^v?[0-9]+\\.[0-9]+\\.')
+          - >-
+            (ansible_facts.distribution == 'Debian'
+             and reverse_proxy_molecule_debian_provenance.stdout
+                 is match('^caddy: /usr/bin/caddy$'))
+            or (ansible_facts.distribution == 'Rocky'
+                and reverse_proxy_molecule_rocky_provenance.stdout == 'caddy')
+          - >-
+            (reverse_proxy_molecule_listeners.stdout | from_json).tcp_443
+            == [reverse_proxy_molecule_address ~ ':443']
+          - >-
+            (reverse_proxy_molecule_listeners.stdout | from_json).tcp_80
+            | length == 0
+          - >-
+            (reverse_proxy_molecule_listeners.stdout | from_json).udp_443
+            | length == 0
+        fail_msg: Caddy package or exact listener state does not match the fixture
+
+    - name: Request both exact hostname routes through verified TLS
+      ansible.builtin.command:
+        argv:
+          - "{{ reverse_proxy_molecule_probe }}"
+          - --address
+          - "{{ reverse_proxy_molecule_address }}"
+          - --hostname
+          - "{{ item }}"
+          - --ca-file
+          - "{{ reverse_proxy_molecule_ca }}"
+          - https
+          - --path
+          - /ready
+      loop:
+        - app.example.test
+        - other.example.test
+      register: reverse_proxy_molecule_https_routes
+      changed_when: false
+
+    - name: Assert exact HTTPS route responses
+      ansible.builtin.assert:
+        that:
+          - (item.stdout | from_json).status == 200
+          - >-
+            (item.stdout | from_json).body
+            == 'fixture host=' ~ item.item ~ ' path=/ready\n'
+      loop: "{{ reverse_proxy_molecule_https_routes.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Request an unknown HTTP host through valid TLS SNI
+      ansible.builtin.command:
+        argv: >-
+          {{ reverse_proxy_molecule_common_probe
+             + ['--host', 'unknown.example.test', 'https'] }}
+      register: reverse_proxy_molecule_unknown_host
+      changed_when: false
+
+    - name: Exchange a bidirectional WebSocket message
+      ansible.builtin.command:
+        argv: >-
+          {{ reverse_proxy_molecule_common_probe
+             + ['websocket', '--path', '/socket', '--message', 'round-trip'] }}
+      register: reverse_proxy_molecule_websocket
+      changed_when: false
+
+    - name: Assert unknown-host isolation and WebSocket forwarding
+      ansible.builtin.assert:
+        that:
+          - >-
+            (reverse_proxy_molecule_unknown_host.stdout | from_json).body
+            != 'fixture host=unknown.example.test path=/\n'
+          - (reverse_proxy_molecule_websocket.stdout | from_json).status == 101
+          - >-
+            (reverse_proxy_molecule_websocket.stdout | from_json).message
+            == 'round-trip'
+        fail_msg: An unknown HTTP host reached the backend or WebSocket forwarding failed
+
+    - name: Verify the service identity can read selected certificate data
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - caddy
+          - --
+          - /usr/bin/test
+          - -r
+          - /etc/caddy/tls/fixture/current/privkey.pem
+      changed_when: false
+
+    - name: Try cross-account certificate access
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - nobody
+          - --
+          - /usr/bin/test
+          - -r
+          - /etc/caddy/tls/fixture/current/privkey.pem
+      register: reverse_proxy_molecule_cross_account_certificate
+      changed_when: false
+      failed_when: false
+
+    - name: Try cross-account administration socket access
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - nobody
+          - --
+          - /usr/bin/python3
+          - -c
+          - >-
+            import socket; s=socket.socket(socket.AF_UNIX);
+            s.connect('/run/caddy/admin.sock')
+      register: reverse_proxy_molecule_cross_account_admin
+      changed_when: false
+      failed_when: false
+
+    - name: Assert cross-account isolation
+      ansible.builtin.assert:
+        that:
+          - reverse_proxy_molecule_cross_account_certificate.rc != 0
+          - reverse_proxy_molecule_cross_account_admin.rc != 0
+
+    - name: Read healthy boot configuration checksum
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_healthy_boot
+
+    - name: Reject invalid certificate material without disturbing healthy state
+      ansible.builtin.include_tasks: tasks/certificate_failure.yml
+      loop:
+        - name: unreadable key
+          target: v1
+          unreadable: true
+        - name: mismatched key
+          target: key-mismatch
+        - name: expired certificate
+          target: expired
+        - name: hostname-incompatible certificate
+          target: hostname-mismatch
+      loop_control:
+        loop_var: reverse_proxy_molecule_certificate_failure
+        label: "{{ reverse_proxy_molecule_certificate_failure.name }}"
+
+    - name: Start a WebSocket session across failed validation
+      ansible.builtin.command:
+        argv: >-
+          {{ reverse_proxy_molecule_common_probe
+             + ['session', '--path', '/socket',
+                '--ready-file', '/tmp/ws-invalid-ready',
+                '--continue-file', '/tmp/ws-invalid-continue'] }}
+      async: 45
+      poll: 0
+      register: reverse_proxy_molecule_invalid_session_job
+      changed_when: false
+
+    - name: Wait for the failed-validation WebSocket session
+      ansible.builtin.wait_for:
+        path: /tmp/ws-invalid-ready
+        state: present
+        timeout: 10
+
+    - name: Install a syntactically invalid fixed candidate
+      ansible.builtin.copy:
+        content: "{\n invalid fixture\n"
+        dest: /etc/caddy/Caddyfile.candidate
+        owner: root
+        group: caddy
+        mode: '0640'
+
+    - name: Attempt invalid candidate activation
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/homelab-reverse-proxy
+          - apply
+      register: reverse_proxy_molecule_invalid_apply
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Release the failed-validation WebSocket session
+      ansible.builtin.file:
+        path: /tmp/ws-invalid-continue
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Collect the failed-validation WebSocket result
+      ansible.builtin.async_status:
+        jid: "{{ reverse_proxy_molecule_invalid_session_job.ansible_job_id }}"
+      register: reverse_proxy_molecule_invalid_session
+      until: reverse_proxy_molecule_invalid_session is finished
+      retries: 20
+      delay: 1
+
+    - name: Read boot configuration after invalid activation
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_after_invalid_boot
+
+    - name: Assert failed validation preserved disk runtime and stream
+      ansible.builtin.assert:
+        that:
+          - reverse_proxy_molecule_invalid_apply.rc == 1
+          - >-
+            reverse_proxy_molecule_after_invalid_boot.stat.checksum
+            == reverse_proxy_molecule_healthy_boot.stat.checksum
+          - >-
+            (reverse_proxy_molecule_invalid_session.stdout | from_json)
+            .connection_preserved
+          - >-
+            (reverse_proxy_molecule_invalid_session.stdout | from_json).message
+            == 'after-signal'
+
+    - name: Read the active Caddyfile for rollback testing
+      ansible.builtin.slurp:
+        src: /etc/caddy/Caddyfile
+      register: reverse_proxy_molecule_active_caddyfile
+      no_log: true
+
+    - name: Install a valid candidate with an unavailable private bind address
+      ansible.builtin.copy:
+        content: >-
+          {{ (reverse_proxy_molecule_active_caddyfile.content | b64decode)
+             | replace('bind ' ~ reverse_proxy_molecule_address,
+                       'bind ' ~ reverse_proxy_molecule_address ~ ' 10.255.255.254') }}
+        dest: /etc/caddy/Caddyfile.candidate
+        owner: root
+        group: caddy
+        mode: '0640'
+      no_log: true
+
+    - name: Prove the unloadable candidate passes native static validation
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - caddy
+          - --
+          - /usr/bin/caddy
+          - validate
+          - --config
+          - /etc/caddy/Caddyfile.candidate
+          - --adapter
+          - caddyfile
+      changed_when: false
+      no_log: true
+
+    - name: Attempt valid but unloadable candidate activation
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/homelab-reverse-proxy
+          - apply
+      register: reverse_proxy_molecule_unloadable_apply
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Read boot configuration after reload-time failure
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_after_unloadable_boot
+
+    - name: Confirm the healthy route after activation failures
+      ansible.builtin.command:
+        argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
+      register: reverse_proxy_molecule_after_failures
+      changed_when: false
+
+    - name: Assert unloadable configuration rollback
+      ansible.builtin.assert:
+        that:
+          - reverse_proxy_molecule_unloadable_apply.rc == 1
+          - >-
+            reverse_proxy_molecule_after_unloadable_boot.stat.checksum
+            == reverse_proxy_molecule_healthy_boot.stat.checksum
+          - (reverse_proxy_molecule_after_failures.stdout | from_json).status == 200
+          - >-
+            (reverse_proxy_molecule_after_failures.stdout | from_json).body
+            == 'fixture host=app.example.test path=/\n'
+
+    - name: Start a WebSocket session across forced certificate reload
+      ansible.builtin.command:
+        argv: >-
+          {{ reverse_proxy_molecule_common_probe
+             + ['session', '--path', '/socket',
+                '--ready-file', '/tmp/ws-reload-ready',
+                '--continue-file', '/tmp/ws-reload-continue'] }}
+      async: 45
+      poll: 0
+      register: reverse_proxy_molecule_reload_session_job
+      changed_when: false
+
+    - name: Wait for the certificate-reload WebSocket session
+      ansible.builtin.wait_for:
+        path: /tmp/ws-reload-ready
+        state: present
+        timeout: 10
+
+    - name: Rotate and diagnose replacement TLS under the shared lock
+      block:
+        - name: Select reload and verify replacement TLS under the shared lock
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -c
+              - >-
+                import fcntl, grp, os, subprocess;
+                lock=os.open('/run/lock/homelab-reverse-proxy.lock',
+                os.O_RDONLY | os.O_NOFOLLOW);
+                os.dup2(lock, 9) if lock != 9 else None;
+                os.close(lock) if lock != 9 else None;
+                fcntl.flock(9, fcntl.LOCK_EX);
+                selected='/etc/caddy/tls/fixture/current.next';
+                os.symlink('v2', selected);
+                os.lchown(selected, 0, grp.getgrnam('caddy').gr_gid);
+                os.replace(selected, '/etc/caddy/tls/fixture/current');
+                subprocess.run(['/usr/local/libexec/homelab-reverse-proxy',
+                'reload', '--lock-held'], check=True, pass_fds=(9,));
+                subprocess.run(['/usr/local/libexec/homelab-reverse-proxy',
+                'verify', '--lock-held'], check=True, pass_fds=(9,))
+          changed_when: true
+          no_log: true
+      rescue:
+        - name: Diagnose unexpected certificate rotation failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: reload
+            reverse_proxy_molecule_diagnostic_context: Certificate rotation
+
+    - name: Release the certificate-reload WebSocket session
+      ansible.builtin.file:
+        path: /tmp/ws-reload-continue
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Collect the certificate-reload WebSocket result
+      ansible.builtin.async_status:
+        jid: "{{ reverse_proxy_molecule_reload_session_job.ansible_job_id }}"
+      register: reverse_proxy_molecule_reload_session
+      until: reverse_proxy_molecule_reload_session is finished
+      retries: 20
+      delay: 1
+
+    - name: Request the route after replacement certificate reload
+      ansible.builtin.command:
+        argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
+      register: reverse_proxy_molecule_replacement_https
+      changed_when: false
+
+    - name: Assert forced reload replaced TLS and reconnected WebSocket
+      ansible.builtin.assert:
+        that:
+          - (reverse_proxy_molecule_replacement_https.stdout | from_json).status == 200
+          - >-
+            (reverse_proxy_molecule_replacement_https.stdout | from_json).body
+            == 'fixture host=app.example.test path=/\n'
+          - >-
+            (reverse_proxy_molecule_replacement_https.stdout | from_json)
+            .certificate_sha256
+            != (reverse_proxy_molecule_https_routes.results[0].stdout | from_json)
+               .certificate_sha256
+          - >-
+            not (reverse_proxy_molecule_reload_session.stdout | from_json)
+                .connection_preserved
+          - >-
+            (reverse_proxy_molecule_reload_session.stdout | from_json).message
+            == 'after-signal'
+
+    - name: Save the healthy configuration for restart recovery
+      ansible.builtin.slurp:
+        src: /etc/caddy/Caddyfile
+      register: reverse_proxy_molecule_restart_previous
+      no_log: true
+
+    - name: Define an interrupted admin-only boot configuration
+      ansible.builtin.set_fact:
+        reverse_proxy_molecule_interrupted_config: |
+          {
+            admin unix//run/caddy/admin.sock
+            auto_https off
+            servers {
+              protocols h1 h2
+            }
+          }
+      no_log: true
+
+    - name: Install interrupted transaction last-good state
+      ansible.builtin.copy:
+        content: "{{ reverse_proxy_molecule_restart_previous.content | b64decode }}"
+        dest: /var/lib/homelab-reverse-proxy/last-good
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: Install interrupted transaction boot configuration
+      ansible.builtin.copy:
+        content: "{{ reverse_proxy_molecule_interrupted_config }}"
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: caddy
+        mode: '0640'
+      no_log: true
+
+    - name: Read interrupted boot configuration checksum
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_interrupted_boot
+
+    - name: Install interrupted transaction marker
+      ansible.builtin.copy:
+        content: >-
+          {{ {'previous': (reverse_proxy_molecule_restart_previous.content
+                           | b64decode | hash('sha256')),
+              'candidate': reverse_proxy_molecule_interrupted_boot.stat.checksum}
+             | to_json }}
+        dest: /var/lib/homelab-reverse-proxy/pending
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: Inspect interrupted transaction metadata before restart
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+      loop:
+        - /etc/caddy/Caddyfile
+        - /var/lib/homelab-reverse-proxy/last-good
+        - /var/lib/homelab-reverse-proxy/pending
+      register: reverse_proxy_molecule_interrupted_transaction
+
+    - name: Assert interrupted transaction metadata before restart
+      ansible.builtin.assert:
+        that:
+          - >-
+            reverse_proxy_molecule_interrupted_transaction.results
+            | map(attribute='stat.pw_name') | list | unique == ['root']
+          - >-
+            reverse_proxy_molecule_interrupted_transaction.results[0]
+            .stat.gr_name == 'caddy'
+          - >-
+            reverse_proxy_molecule_interrupted_transaction.results[0]
+            .stat.mode == '0640'
+          - >-
+            reverse_proxy_molecule_interrupted_transaction.results[1:]
+            | map(attribute='stat.gr_name') | list | unique == ['root']
+          - >-
+            reverse_proxy_molecule_interrupted_transaction.results[1:]
+            | map(attribute='stat.mode') | list | unique == ['0600']
+
+    - name: Restart and diagnose pending transaction recovery
+      block:
+        - name: Restart Caddy through pending transaction recovery
+          ansible.builtin.systemd_service:
+            name: caddy.service
+            state: restarted
+      rescue:
+        - name: Diagnose unexpected pending recovery failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: recover
+            reverse_proxy_molecule_diagnostic_context: Pending transaction recovery
+
+    - name: Inspect recovered transaction state
+      ansible.builtin.stat:
+        path: /var/lib/homelab-reverse-proxy/pending
+        follow: false
+      register: reverse_proxy_molecule_pending_after_restart
+
+    - name: Inspect recovered boot configuration
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        follow: false
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_recovered_boot
+
+    - name: Confirm the healthy route after restart recovery
+      ansible.builtin.command:
+        argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
+      register: reverse_proxy_molecule_after_restart
+      changed_when: false
+
+    - name: Assert restart recovered the pending transaction
+      ansible.builtin.assert:
+        that:
+          - not reverse_proxy_molecule_pending_after_restart.stat.exists
+          - >-
+            reverse_proxy_molecule_recovered_boot.stat.checksum
+            == (reverse_proxy_molecule_restart_previous.content
+                | b64decode | hash('sha256'))
+          - reverse_proxy_molecule_recovered_boot.stat.pw_name == 'root'
+          - reverse_proxy_molecule_recovered_boot.stat.gr_name == 'caddy'
+          - reverse_proxy_molecule_recovered_boot.stat.mode == '0640'
+          - reverse_proxy_molecule_recovered_boot.stat.nlink == 1
+          - (reverse_proxy_molecule_after_restart.stdout | from_json).status == 200
+          - >-
+            (reverse_proxy_molecule_after_restart.stdout | from_json).body
+            == 'fixture host=app.example.test path=/\n'
+
+    - name: Reconcile and diagnose removal of the first route
+      block:
+        - name: Reconcile the proxy with only the second route  # noqa: var-naming[no-role-prefix]
+          ansible.builtin.include_role:
+            name: reverse_proxy
+          vars:
+            reverse_proxy_bind_addresses:
+              - "{{ reverse_proxy_molecule_address }}"
+            reverse_proxy_client_sources:
+              - "{{ reverse_proxy_molecule_address }}/32"
+            reverse_proxy_routes:
+              - hostname: other.example.test
+                backend_port: 18080
+                certificate_name: fixture
+            security_baseline_apply_firewall_runtime: false
+            os_baseline_verify_runtime_controls: false
+      rescue:
+        - name: Diagnose unexpected route removal failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: apply
+            reverse_proxy_molecule_diagnostic_context: Route removal convergence
+
+    - name: Request the removed route through the remaining TLS site
+      ansible.builtin.command:
+        argv:
+          - "{{ reverse_proxy_molecule_probe }}"
+          - --address
+          - "{{ reverse_proxy_molecule_address }}"
+          - --hostname
+          - other.example.test
+          - --host
+          - app.example.test
+          - --ca-file
+          - "{{ reverse_proxy_molecule_ca }}"
+          - https
+      register: reverse_proxy_molecule_removed_route
+      changed_when: false
+
+    - name: Assert the removed route no longer reaches its backend
+      ansible.builtin.assert:
+        that:
+          - >-
+            (reverse_proxy_molecule_removed_route.stdout | from_json).body
+            != 'fixture host=app.example.test path=/\n'
+
+    - name: Reconcile and diagnose an empty proxy route set
+      block:
+        - name: Reconcile an empty proxy route set  # noqa: var-naming[no-role-prefix]
+          ansible.builtin.include_role:
+            name: reverse_proxy
+          vars:
+            reverse_proxy_bind_addresses: []
+            reverse_proxy_client_sources: []
+            reverse_proxy_routes: []
+            security_baseline_apply_firewall_runtime: false
+            os_baseline_verify_runtime_controls: false
+      rescue:
+        - name: Diagnose unexpected empty route convergence failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: apply
+            reverse_proxy_molecule_diagnostic_context: Empty route convergence
+
+    - name: Wait for the final HTTPS listener to close
+      ansible.builtin.wait_for:
+        host: "{{ reverse_proxy_molecule_address }}"
+        port: 443
+        state: stopped
+        timeout: 10
+
+    - name: Verify fixture certificates remain externally owned
+      ansible.builtin.stat:
+        path: "/etc/caddy/tls/fixture/{{ item }}"
+      loop:
+        - v1/fullchain.pem
+        - v1/privkey.pem
+        - v2/fullchain.pem
+        - v2/privkey.pem
+      register: reverse_proxy_molecule_external_certificates
+
+    - name: Assert empty ingress and retained external certificate data
+      ansible.builtin.assert:
+        that:
+          - >-
+            reverse_proxy_molecule_external_certificates.results
+            | map(attribute='stat.exists') | list | unique == [true]
+          - >-
+            reverse_proxy_molecule_external_certificates.results
+            | map(attribute='stat.pw_name') | list | unique == ['root']
+          - >-
+            reverse_proxy_molecule_external_certificates.results
+            | map(attribute='stat.gr_name') | list | unique == ['caddy']
+          - >-
+            reverse_proxy_molecule_external_certificates.results
+            | map(attribute='stat.mode') | list | unique == ['0640']
+
+    - name: Report rootless firewall runtime evidence boundary
+      ansible.builtin.debug:
+        msg: >-
+          The scenario verified exact permanent firewalld policy with
+          security_baseline_apply_firewall_runtime=false. Rootless containers
+          do not provide the host kernel firewall boundary or Rocky SELinux
+          enforcement boundary; both remain separate live operator evidence.

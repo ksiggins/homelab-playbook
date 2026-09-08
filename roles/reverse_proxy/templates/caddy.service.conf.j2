@@ -1,0 +1,26 @@
+[Service]
+User=caddy
+Group=caddy
+SupplementaryGroups=
+ExecStart=
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
+ExecStartPre=
+ExecStartPre=+/usr/sbin/usermod --groups= caddy
+ExecStartPre=+/usr/local/libexec/homelab-reverse-proxy recover
+ExecReload=
+ExecReload=+/usr/local/libexec/homelab-reverse-proxy reload
+AmbientCapabilities=
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RuntimeDirectory=caddy
+RuntimeDirectoryMode=0700
+StateDirectory=caddy
+StateDirectoryMode=0700
+ReadWritePaths=
+ReadWritePaths=/var/lib/caddy /run/caddy
+UMask=0077

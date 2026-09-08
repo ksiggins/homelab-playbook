@@ -1,0 +1,23 @@
+FROM docker.io/library/debian:13
+
+ENV container=podman
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        dbus \
+        openssl \
+        passwd \
+        python3 \
+        python3-apt \
+        sudo \
+        systemd \
+    && useradd --create-home --shell /bin/bash ansible \
+    && passwd --lock ansible \
+    && install --directory --mode=0750 /etc/sudoers.d \
+    && printf 'ansible ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/90-installer-ansible \
+    && chmod 0440 /etc/sudoers.d/90-installer-ansible \
+    && apt-get clean
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/usr/lib/systemd/systemd"]

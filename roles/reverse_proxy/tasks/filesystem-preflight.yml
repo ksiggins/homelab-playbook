@@ -1,0 +1,105 @@
+---
+- name: Inspect reverse proxy parent directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc
+    - /etc/systemd
+    - /etc/systemd/system
+    - /etc/tmpfiles.d
+    - /usr
+    - /usr/local
+    - /var
+    - /var/lib
+    - /run
+    - /run/lock
+  register: reverse_proxy_preinstall_parents
+
+- name: Reject unsafe reverse proxy parent directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - not item.stat.islnk
+      - item.stat.uid == 0
+      - >-
+        (item.item == '/run/lock'
+         and item.stat.mode[0] == '1')
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      A reverse proxy parent directory is missing, writable, or outside root
+      ownership
+  loop: "{{ reverse_proxy_preinstall_parents.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect managed reverse proxy directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc/caddy
+    - /etc/caddy/tls
+    - /var/lib/caddy
+    - /var/lib/homelab-reverse-proxy
+    - /usr/local/libexec
+    - /etc/systemd/system/caddy.service.d
+    - /run/caddy
+  register: reverse_proxy_preinstall_directories
+
+- name: Reject unsafe existing reverse proxy filesystem boundaries
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isdir
+      - not item.stat.exists or not item.stat.islnk
+      - >-
+        not item.stat.exists
+        or (item.item in ['/var/lib/caddy', '/run/caddy']
+            and item.stat.pw_name == 'caddy'
+            and item.stat.gr_name == 'caddy')
+        or (item.item not in ['/var/lib/caddy', '/run/caddy']
+            and item.stat.uid == 0)
+      - >-
+        not item.stat.exists
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      An existing reverse proxy directory has unsafe ownership, type, or
+      permissions
+  loop: "{{ reverse_proxy_preinstall_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect managed reverse proxy files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc/caddy/Caddyfile
+    - /etc/caddy/Caddyfile.candidate
+    - /var/lib/homelab-reverse-proxy/managed
+    - /usr/local/libexec/homelab-reverse-proxy
+    - /etc/systemd/system/caddy.service.d/override.conf
+    - /etc/tmpfiles.d/homelab-reverse-proxy.conf
+    - /run/lock/homelab-reverse-proxy.lock
+  register: reverse_proxy_preinstall_files
+
+- name: Reject unsafe existing reverse proxy files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.uid == 0
+      - not item.stat.exists or item.stat.nlink == 1
+      - >-
+        not item.stat.exists
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      An existing reverse proxy file has unsafe ownership, type, links, or
+      permissions
+  loop: "{{ reverse_proxy_preinstall_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
