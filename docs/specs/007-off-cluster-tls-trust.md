@@ -5,7 +5,7 @@ Issue: [#5](https://github.com/supermorphic/homelab-playbook/issues/5)
 Status: hybrid topology and architecture approved with review refinements below.
 The guides describe operator procedures. Host automation is implemented by the
 `tls_automation` role and `tls` playbooks. Live deployment and the Caddy adapter
-remain dependent on issue #25; the modem route is not yet deployed.
+remain dependent on issue #25; the private device routes are not yet deployed.
 
 ## Decision and ownership
 
@@ -18,6 +18,7 @@ Use production ACME with Cloudflare DNS-01 and split certificate ownership:
 | UNAS Drive | Native UniFi OS issuer | Direct to UNAS |
 | NUC #4 browser applications | Dedicated NUC #4 issuer | Through shared Caddy |
 | ARRIS S34 Web Manager | NUC #4 issuer supplies Caddy's certificate | Caddy forwards over HTTPS to modem |
+| Room Alert 3E | NUC #4 issuer supplies Caddy's certificate | Caddy forwards over HTTP port 80 on the private network |
 
 The operator selected this hybrid topology instead of distributing a wildcard
 and private key to every appliance. The earlier proposal to place all appliance
@@ -28,8 +29,8 @@ UDM and UNAS reports.
 Issue #25 owns Caddy's deployment model, private listener, routing schema,
 service identity, and configuration reload. Issue #5 owns NUC #4 issuance,
 renewal, certificate deployment, served-certificate verification, and the
-modem-specific integration requirements. The operator's modem decision extends
-the proxy use case to one explicitly configured remote private backend.
+private device integration requirements. Each device uses one explicitly
+configured remote private backend.
 
 ## Names and DNS
 
@@ -39,10 +40,11 @@ Use a single exact hostname and certificate for each UniFi console. The
 records point directly to those endpoints.
 
 Use one separately issued `*.infra.example.com` wildcard for Caddy's directly
-nested off-cluster hostnames, including `modem.infra.example.com`. Keep direct
-UniFi names outside that namespace. The Caddy certificate's exact approved SAN
-set is one DNS name: `*.infra.example.com`. Do not add `*.example.com`, the
-namespace apex, UniFi names, or cluster names to that certificate.
+nested off-cluster hostnames, including `modem.infra.example.com` and
+`room-alert.infra.example.com`. Keep direct UniFi names outside that namespace.
+The Caddy certificate's exact approved SAN set is one DNS name:
+`*.infra.example.com`. Do not add `*.example.com`, the namespace apex, UniFi
+names, or cluster names to that certificate.
 
 Examples are synthetic; real names and addresses are operator inputs. The
 dedicated namespace ensures the Caddy wildcard private key cannot authenticate
@@ -54,10 +56,10 @@ independent; this design does not reuse their private keys, ACME accounts, or
 DNS credentials. Expanding the approved SAN set requires an explicit design and
 configuration review, not automatic inclusion of names requested by the issuer.
 
-The modem name resolves to NUC #4's private listener. Caddy connects to the modem's
-actual management address. All selected DNS names remain stable across private
-address changes; update the relevant local records, backend addresses, and
-routing instead of reissuing unchanged certificate names.
+Each device name resolves to NUC #4's private listener. Caddy connects to the
+device's actual management address. All selected DNS names remain stable across
+private address changes; update the relevant local records, backend addresses,
+and routing instead of reissuing unchanged certificate names.
 
 Public DNS serves ACME challenge records. Private browser names do not require
 public address records, Cloudflare proxying, public ingress, or WAN port forwards.
@@ -256,23 +258,33 @@ deployment retry must not force another ACME order. Do not roll back a correct
 certificate solely because an application backend is unavailable; report backend
 health separately from certificate activation.
 
-## Modem integration
+## Private device integration
 
-The [modem guide](../guides/modem-proxy.md) defines the selected S34 route.
-Use a route-specific trust pool and certificate name for its HTTPS backend after
-the operator establishes the modem certificate's identity. Preserve hostname,
-chain, and validity checks. Do not assume a captured self-signed certificate has
-usable SANs or remains stable across firmware updates.
+The [device proxy guide](../guides/device-proxy.md) defines the selected ARRIS
+S34 and Room Alert 3E routes. Use a route-specific trust pool and certificate
+name for the modem's HTTPS backend after the operator establishes the modem
+certificate's identity. Preserve hostname, chain, and validity checks. Do not
+assume a captured self-signed certificate has usable SANs or remains stable
+across firmware updates.
 
-If authenticated backend TLS cannot be established, keep the modem route inactive
-and preserve direct modem access while the operator resolves that boundary.
-There is no automatic fallback to disabled verification or HTTP. Route-specific
-redirect or cookie handling is added only after observed compatibility tests
-demonstrate a need. The proxy receives no stored modem login credential.
+If authenticated backend TLS cannot be established, keep the modem route
+inactive and preserve direct modem access while the operator resolves that
+boundary. There is no automatic fallback to disabled verification or HTTP for
+the modem.
 
-Acceptance covers login/logout, status navigation, redirects, backend trust, and
-preservation of unrelated routes. It does not reboot or reset the modem. Pi-hole
-and Caddy must remain optional for direct modem recovery access.
+The Room Alert 3E route uses an explicit HTTP port 80 backend because the device
+does not provide HTTPS. Browser traffic remains HTTPS to Caddy, but credentials
+and page contents are plaintext on the private Caddy-to-device hop. Restrict
+that backend path to the trusted management network and do not describe it as
+end-to-end encrypted. Do not apply disabled TLS verification settings to an
+HTTP route.
+
+Route-specific redirect or cookie handling is added only after observed
+compatibility tests demonstrate a need. The proxy receives no stored device
+login credential. Acceptance covers login/logout, status navigation, redirects,
+the selected backend transport, and preservation of unrelated routes. It does
+not reboot or reset a device. Pi-hole and Caddy must remain optional for direct
+device recovery access.
 
 ## Operator interface and validation
 

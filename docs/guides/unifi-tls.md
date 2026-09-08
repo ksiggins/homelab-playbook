@@ -9,11 +9,11 @@ and live deployment remain separate integration work.
 
 UniFi consoles retain their own certificates and Cloudflare tokens. They do not
 receive the Caddy wildcard private key or depend on NUC #4 for renewal. Caddy is
-the intended TLS endpoint for NUC #4 applications and the ARRIS S34 browser
-interface. The [hybrid TLS design](../specs/007-off-cluster-tls-trust.md) records
-the ownership boundaries. The [modem proxy guide](modem-proxy.md) defines its DNS,
-backend trust, acceptance, and recovery requirements. S34 proxy compatibility
-and backend TLS trust still require separate verification.
+the intended TLS endpoint for NUC #4 applications and proxied private device
+interfaces. The [hybrid TLS design](../specs/007-off-cluster-tls-trust.md) records
+the ownership boundaries. The [device proxy guide](device-proxy.md) defines DNS,
+backend transport, acceptance, and recovery requirements. Each device route
+still requires separate compatibility verification.
 
 This guide adds no Ansible deployment or automatic console configuration.
 The operator performs the steps below in Cloudflare, the local DNS service,
@@ -57,9 +57,9 @@ Replace them with the selected domain and the consoles' actual private addresses
 
 Keep these direct UniFi names outside Caddy's dedicated `infra.example.com`
 namespace. Caddy uses `*.infra.example.com`, including for
-`modem.infra.example.com`; that wildcard cannot authenticate the UniFi names
-above. The namespace boundary does not reduce the DNS permissions of tokens
-scoped to the shared Cloudflare zone.
+`modem.infra.example.com` and `room-alert.infra.example.com`; that wildcard
+cannot authenticate the UniFi names above. The namespace boundary does not
+reduce the DNS permissions of tokens scoped to the shared Cloudflare zone.
 
 Use a single hostname per console for the initial setup. Avoid issuing another
 copy of Caddy's wildcard. Specific certificate names will be visible in public

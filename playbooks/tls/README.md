@@ -35,6 +35,9 @@ tls_automation_endpoints:
   - hostname: modem.infra.example.com
     address: 192.0.2.10
     port: 443
+  - hostname: room-alert.infra.example.com
+    address: 192.0.2.10
+    port: 443
 tls_automation_issuer_uid: 2010
 tls_automation_issuer_gid: 2010
 tls_automation_timer_enabled: false

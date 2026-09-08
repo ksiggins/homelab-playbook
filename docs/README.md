@@ -13,8 +13,8 @@ routine playbook operations. Guides cover setup and recovery procedures.
   identity, edit protected inventory, and manage recipients.
 - [UniFi TLS certificates](guides/unifi-tls.md) — Configure native UniFi OS
   certificate issuance and renewal with Cloudflare DNS and direct local access.
-- [ARRIS modem proxy](guides/modem-proxy.md) — Prepare private S34 browser access
-  through Caddy, including backend certificate trust and recovery requirements.
+- [Private device proxy](guides/device-proxy.md) — Prepare private device browser
+  access through Caddy for authenticated HTTPS and HTTP-only backends.
 
 ## Reference
 
