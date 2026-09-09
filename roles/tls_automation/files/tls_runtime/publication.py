@@ -66,6 +66,7 @@ class Publisher:
         validate: Callable[[Path], str],
         reload_and_verify: Callable[[str], None],
         preflight: Callable[[Path], None],
+        prepare=None,
     ) -> None:
         self.root = Path(root)
         self.journal = Path(journal)
@@ -74,6 +75,7 @@ class Publisher:
         self.validate = validate
         self.reload_and_verify = reload_and_verify
         self.preflight = preflight
+        self.prepare = prepare
         if not self.root.is_absolute() or not self.journal.is_absolute():
             raise ValueError("publication paths must be absolute")
         if self.journal == self.root or self.root in self.journal.parents:
@@ -425,6 +427,7 @@ class Publisher:
         self._assert_generation(generation)
         temporary = self.journal.parent / (_CURRENT_PREFIX + uuid.uuid4().hex)
         os.symlink(generation, temporary)
+        os.lchown(temporary, self.owner_uid, self.reader_gid)
         try:
             os.replace(temporary, current)
             self._fsync_directory(self.root)
@@ -476,13 +479,24 @@ class Publisher:
         self._remove_journal()
         self._remove_retired(destination)
 
+    def _refresh_binding(self, record):
+        if "caddy" in record and self._lstat(self.journal) is not None:
+            latest = self._read_journal()
+            if latest["generation"] != record["generation"]:
+                raise ValueError("publication identity changed during callback")
+            for key in ("restart", "disk_recovery"):
+                record["caddy"][key] = latest["caddy"][key]
+
     def _rollback(
         self,
         record: Dict[str, object],
         activation_error: Exception,
     ) -> None:
+        self._refresh_binding(record)
         previous = record["previous"]
         previous_fingerprint = record["previous_fingerprint"]
+        if "caddy" in record:
+            record["caddy"]["activation_failed"] = True
         try:
             self._switch_current(previous if isinstance(previous, str) else None)
             record["status"] = "rollback_pending"
@@ -491,9 +505,13 @@ class Publisher:
                 previous_fingerprint if isinstance(previous_fingerprint, str) else ""
             )
         except Exception as rollback_error:
+            self._refresh_binding(record)
             record["status"] = "rollback_failed"
+            if "caddy" in record:
+                record["caddy"]["restoration_failed"] = True
             self._write_journal(record)
             raise PublicationError(activation_error, rollback_error) from rollback_error
+        self._refresh_binding(record)
         self._finish_restored_cleanup(record)
         raise PublicationError(activation_error)
 
@@ -550,6 +568,13 @@ class Publisher:
                 generation,
                 fingerprint,
             )
+            if self.prepare is not None:
+                try:
+                    record["caddy"] = self.prepare(record)
+                    self._validate_binding(record["caddy"])
+                except Exception:
+                    self._retire_unjournaled_generation(generation)
+                    raise
             self._write_journal(record)
             try:
                 self._switch_current(generation)
@@ -574,7 +599,7 @@ class Publisher:
             record = json.loads(self.journal.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise ValueError("transaction journal is malformed") from error
-        if not isinstance(record, dict) or set(record) != _JOURNAL_FIELDS:
+        if not isinstance(record, dict) or set(record) not in (_JOURNAL_FIELDS, _JOURNAL_FIELDS | {"caddy"}):
             raise ValueError("transaction journal schema is invalid")
         if record.get("version") != 1 or record.get("status") not in _JOURNAL_STATUSES:
             raise ValueError("transaction journal state is invalid")
@@ -599,7 +624,23 @@ class Publisher:
             raise ValueError("transaction retired generation is invalid")
         if (record["status"] == "restored") != (retired is not None):
             raise ValueError("transaction terminal state is invalid")
+        if "caddy" in record:
+            self._validate_binding(record["caddy"])
         return record
+
+    @staticmethod
+    def _validate_binding(binding):
+        fields = {"desired_revision", "previous_boot", "candidate_boot", "disk_recovery",
+                  "restart", "activation_failed", "restoration_failed"}
+        if (not isinstance(binding, dict) or set(binding) != fields
+                or not isinstance(binding["desired_revision"], str)
+                or not _FINGERPRINT.fullmatch(binding["desired_revision"])
+                or binding["disk_recovery"] not in (None, "pending", "restored")
+                or any(type(binding[name]) is not bool for name in
+                       ("restart", "activation_failed", "restoration_failed"))
+                or any(not isinstance(binding[name], str) or len(binding[name].encode()) > 1048576
+                       for name in ("previous_boot", "candidate_boot"))):
+            raise ValueError("invalid Caddy publication binding")
 
     def _retry_retained(self, record: Dict[str, object]) -> Dict[str, object]:
         """Retry retained bytes after failed restoration, without new issuance.
@@ -628,11 +669,13 @@ class Publisher:
             self.reload_and_verify(actual)
         except Exception as activation_error:
             self._rollback(record, activation_error)
+        self._refresh_binding(record)
         record["status"] = "recovered"
         self._write_journal(record)
         self._remove_journal()
-        return {"publication": "changed", "activation_failed": True,
-                "restoration_failed": True}
+        binding = record.get("caddy", {})
+        return {"publication": "changed", "activation_failed": binding.get("activation_failed", True),
+                "restoration_failed": binding.get("restoration_failed", True)}
 
     def recover(self) -> Optional[Dict[str, object]]:
         """Finish or roll back the one journaled publication transaction."""
@@ -653,7 +696,8 @@ class Publisher:
         if previous is not None:
             self._assert_generation(str(previous))
 
-        if record["status"] in {"retry_pending", "recovered"}:
+        if (record["status"] in {"retry_pending", "recovered"}
+                or record.get("caddy", {}).get("disk_recovery") is not None):
             try:
                 return self._retry_retained(record)
             except Exception as error:
@@ -692,7 +736,10 @@ class Publisher:
                 expected_fingerprint if isinstance(expected_fingerprint, str) else ""
             )
         except Exception as rollback_error:
+            self._refresh_binding(record)
             record["status"] = "rollback_failed"
+            if "caddy" in record:
+                record["caddy"]["restoration_failed"] = True
             self._write_journal(record)
             try:
                 return self._retry_retained(record)

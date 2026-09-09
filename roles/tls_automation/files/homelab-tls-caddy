@@ -1,0 +1,11 @@
+#!/usr/bin/python3 -I
+"""Fixed certificate integration adapter; exclusive Caddy lock arrives on fd9."""
+import os
+import sys
+
+os.environ.clear()
+os.environ.update({"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C", "LC_ALL": "C", "HOME": "/"})
+sys.path.insert(0, "/usr/local/lib/homelab-tls")
+from tls_runtime.caddy import main
+
+sys.exit(main())
