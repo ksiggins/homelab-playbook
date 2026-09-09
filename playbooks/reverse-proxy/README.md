@@ -88,6 +88,9 @@ configuration rollback is not package rollback.
 Configuration changes validate under the service identity before reload and
 preserve the committed boot configuration on failure. A root-owned transaction
 record permits interrupted configuration recovery before systemd starts Caddy.
+If a failed reload leaves extra listeners that runtime rollback cannot remove,
+recovery restarts Caddy and can briefly interrupt every route. The helper checks
+the restored configuration, listeners, and served certificates after restart.
 Successful reloads can close WebSockets; applications must reconnect. The Debian
 package does not support the newer WebSocket drain-delay option.
 

@@ -180,7 +180,7 @@ printing the private key or protected configuration. Issuer account credentials
 never enter Caddy's filesystem or environment.
 
 Configuration and certificate activation share a root-owned host lock. Issue #5
-must hold that lock across version selection, validation, certificate-cache
+must hold that lock across version selection, validation, certificate
 replacement, and post-deployment TLS verification. Its deployment procedure
 retains the previous version and restores the pointer and running certificate
 after failure. The proxy's certificate-refresh entry point supports use inside
@@ -195,16 +195,13 @@ inherited on file descriptor 9. The helper validates that inherited lock;
 the flag alone does not grant execution authority. Certificate automation must
 retain it through version selection, reload, and served-certificate verification.
 
-The `reload` entry point validates the committed configuration and a managed
-admin-only configuration as the service account. It loads the admin-only
-configuration to discard the active TLS application and certificate cache, then
-loads the committed configuration from the selected `current` paths. The
-distribution Caddy releases do not reliably replace externally managed
-certificates during a single configuration reload. It fails if the service is
-inactive before the transaction. Issue #5 owns retries, renewal timing, expiry
-monitoring, version retention, and recovery of interrupted certificate
-deployments. Git plus separately recoverable certificate material is sufficient
-to reconstruct the proxy; Caddy cache files are not authoritative recovery data.
+The `reload` entry point validates the committed configuration as the service
+account and forces Caddy to reload it from the selected `current` certificate
+paths. It fails if the service is inactive before the transaction. Issue #5 owns
+retries, renewal timing, expiry monitoring, version retention, and recovery of
+interrupted certificate deployments. Git plus separately recoverable certificate
+material is sufficient to reconstruct the proxy; Caddy cache files are not
+authoritative recovery data.
 
 ## Configuration activation and failure behavior
 
@@ -235,13 +232,22 @@ to be active; a concurrent stop fails activation without installing a candidate.
    restore the previous boot configuration, restore runtime state if needed,
    and report both activation and recovery outcomes.
 
-Caddy rejects failed configuration loads while retaining its working runtime
-configuration. That behavior alone does not protect the file used on the next
-boot, so the helper also restores the committed disk configuration. A startup
-precondition recovers a pending transaction before Caddy reads its boot file.
-Startup recovery acquires the same deployment lock before reading or repairing
-transaction state. Activation never starts the service while holding that lock,
-so this sequence does not create a systemd startup lock cycle.
+A failed configuration load can leave a partially started HTTP listener behind
+in the distribution Caddy releases. The previous configuration can still be
+active while this extra listener continues serving traffic. The helper checks
+both listener addresses and duplicate sockets owned by the Caddy process. It
+rechecks brief listener overlap before treating persistent duplicates as failure.
+It restores the committed disk configuration and attempts runtime rollback through
+reload, including a check of the served certificates. If runtime rollback cannot
+restore the declared listeners, active configuration, and served certificates, it retains durable recovery state, releases the deployment lock,
+and restarts Caddy. This recovery can briefly interrupt all routes.
+
+A startup precondition acquires the deployment lock and recovers a pending
+transaction before Caddy reads its boot file. After restart, activation reacquires
+the lock and verifies the previous boot configuration, runtime, listeners, and
+served certificates. It reports recovery as incomplete if another activation
+changed the boot configuration in the meantime. Activation never waits for
+systemd startup while holding the lock.
 
 Failed first route activation restores the admin-only configuration, with no
 HTTPS listener or candidate boot configuration. An ambiguous or unrecoverable
@@ -290,9 +296,10 @@ only generated text. Disposable Debian 13 and Rocky Linux 9 evidence covers:
   hostname routes, ordinary HTTP, and bidirectional WebSocket messages.
 - Invalid syntax, unreadable and mismatched keys, expired certificates, and
   hostname mismatch, while a previously healthy route continues serving.
-- A reload-time failure that passes static validation, disk and runtime
-  rollback, interrupted-transaction recovery, and failed initial activation.
-- Certificate-cache replacement serving a new external certificate, reconnecting
+- A reload-time failure after opening one listener that passes static validation,
+  disk and runtime rollback with exactly one remaining listener, interrupted
+  transaction recovery, and failed initial activation.
+- Certificate replacement serving a new external certificate, reconnecting
   WebSockets, and unchanged configuration producing no Ansible change.
 - Test route removal, eventual stream closure, listener removal for an empty
   route list, and complete run-owned fixture cleanup even after test failure.

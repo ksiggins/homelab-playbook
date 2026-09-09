@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 
 INHERITED_LOCK_FD = 9
@@ -32,6 +33,19 @@ INHERITED_LOCK_FD = 9
 
 class ActivationError(RuntimeError):
     """A diagnostic which contains no protected configuration or key material."""
+
+
+class ListenerOverlap(ActivationError):
+    """A listener snapshot which may reflect a brief Caddy reload overlap."""
+
+
+class RestartRequired(ActivationError):
+    """Carry rollback state out of the deployment lock before systemd startup."""
+
+    def __init__(self, previous):
+        super().__init__("runtime recovery requires a service restart")
+        self.previous = previous
+        self.reason = "interrupted configuration activation"
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
@@ -98,7 +112,6 @@ class Activator:
         self.ids = ids if ids is not None else identity()
         self.config_dir = self.path("/etc/caddy")
         self.boot = self.config_dir / "Caddyfile"
-        self.admin = self.config_dir / "Caddyfile.admin"
         self.candidate = self.config_dir / "Caddyfile.candidate"
         self.state = self.path("/var/lib/homelab-reverse-proxy")
         self.pending = self.state / "pending"
@@ -136,7 +149,6 @@ class Activator:
         self.metadata(self.config_dir / "tls", stat.S_ISDIR, root_uid, caddy_gid, 0o750)
         self.metadata(self.state, stat.S_ISDIR, root_uid, root_gid, 0o700)
         self.metadata(self.boot, stat.S_ISREG, root_uid, caddy_gid, 0o640)
-        self.metadata(self.admin, stat.S_ISREG, root_uid, caddy_gid, 0o640)
 
     @contextlib.contextmanager
     def locked(self, shared=False, inherited=False):
@@ -263,6 +275,18 @@ class Activator:
         pid = self.commands.run(["/usr/bin/systemctl", "show", "--property=MainPID", "--value", "caddy.service"]).decode().strip()
         if not pid.isdigit() or int(pid) <= 0:
             raise ActivationError("Caddy service process could not be observed")
+        # Caddy starts replacement listeners before retiring the old ones.
+        # Allow that brief overlap, but never accept a persistent duplicate.
+        for attempt in range(20):
+            try:
+                self.observe_listeners(pid, configuration)
+                return
+            except ListenerOverlap:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
+
+    def observe_listeners(self, pid, configuration):
         observed = set()
         output = self.commands.run(["ss", "-H", "-lnptu"]).decode()
         for line in output.splitlines():
@@ -273,9 +297,12 @@ class Activator:
                 raise ActivationError("Caddy owns an unexpected network listener")
             try:
                 address, port = fields[4].rsplit(":", 1)
-                observed.add((str(ipaddress.ip_address(address.strip("[]"))), int(port)))
+                listener = (str(ipaddress.ip_address(address.strip("[]"))), int(port))
             except ValueError:
                 raise ActivationError("Caddy owns an unexpected network listener") from None
+            if listener in observed:
+                raise ListenerOverlap("Caddy owns duplicate network listeners")
+            observed.add(listener)
         if observed != self.expected_listeners(configuration):
             raise ActivationError("Caddy network listeners differ from the declared listeners")
 
@@ -408,9 +435,16 @@ class Activator:
             desired = self.validate(self.boot)
             try:
                 self.observed(desired)
+                self.served_tls(desired)
             except ActivationError:
-                self.caddy("reload", self.boot)
-                self.observed(desired)
+                try:
+                    self.caddy("reload", self.boot)
+                    self.observed(desired)
+                    self.served_tls(desired)
+                except ActivationError:
+                    # A failed Caddy HTTP app start can leave listeners outside
+                    # the active configuration. Reload cannot close those sockets.
+                    raise RestartRequired(previous) from None
 
     def recover_pending(self, runtime=False):
         if not self.pending.exists():
@@ -436,50 +470,85 @@ class Activator:
             self.recover_pending()
 
     def apply(self):
-        with self.locked():
-            self.active()
-            self.recover_pending(runtime=True)
-            self.metadata(self.candidate, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
-            candidate = self.candidate.read_bytes()
-            desired = self.validate(self.candidate)
-            self.metadata(self.candidate, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
-            if self.candidate.read_bytes() != candidate:
-                raise ActivationError("candidate changed during validation; rerun provisioning")
-            previous = self.boot.read_bytes()
-            if candidate == previous:
+        try:
+            with self.locked():
                 try:
+                    return self.apply_locked()
+                except RestartRequired as recovery:
+                    # Keep rollback authority durable while releasing the lock.
+                    # Usually the original transaction marker is still present.
+                    if not self.pending.exists():
+                        self.durable_write(self.previous, recovery.previous, 0o600, self.ids[1])
+                        digest = hashlib.sha256(recovery.previous).hexdigest()
+                        self.durable_write(self.pending, json.dumps({"previous": digest,
+                                                                   "candidate": digest}).encode(),
+                                           0o600, self.ids[1])
+                    raise
+        except RestartRequired as recovery:
+            try:
+                # ExecStartPre takes the same lock and restores the journaled
+                # boot configuration. Never wait for it while holding that lock.
+                self.commands.run(["/usr/bin/systemctl", "restart", "caddy.service"])
+                with self.locked():
+                    if (self.pending.exists() or self.pending.is_symlink()
+                            or self.boot.read_bytes() != recovery.previous):
+                        raise ActivationError("configuration changed during runtime recovery")
+                    desired = self.validate(self.boot)
                     self.observed(desired)
                     self.served_tls(desired)
-                    return "unchanged"
-                except ActivationError:
-                    pass
-            self.active()
-            self.socket_metadata()
-            # The backup and marker are both durable before changing the boot file.
-            self.durable_write(self.previous, previous, 0o600, self.ids[1])
-            record = json.dumps({"previous": hashlib.sha256(previous).hexdigest(),
-                                 "candidate": hashlib.sha256(candidate).hexdigest()}).encode()
-            self.durable_write(self.pending, record, 0o600, self.ids[1])
+            except (ActivationError, OSError):
+                raise ActivationError("activation failed: " + recovery.reason
+                                      + "; recovery is incomplete; operator recovery is required") from None
+            raise ActivationError("activation failed: " + recovery.reason
+                                  + "; previous boot and runtime configuration restored after service restart") from None
+
+    def apply_locked(self):
+        self.active()
+        self.recover_pending(runtime=True)
+        self.metadata(self.candidate, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
+        candidate = self.candidate.read_bytes()
+        desired = self.validate(self.candidate)
+        self.metadata(self.candidate, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
+        if self.candidate.read_bytes() != candidate:
+            raise ActivationError("candidate changed during validation; rerun provisioning")
+        previous = self.boot.read_bytes()
+        if candidate == previous:
             try:
-                self.durable_write(self.boot, candidate, 0o640, self.ids[3])
-                self.caddy("reload", self.boot)
                 self.observed(desired)
                 self.served_tls(desired)
-                self.clear_pending()
-            except (ActivationError, OSError) as failure:
-                reason = str(failure) if isinstance(failure, ActivationError) else "managed filesystem operation failed"
-                try:
-                    if self.pending.exists() or self.pending.is_symlink():
-                        self.recover_pending(runtime=True)
-                    else:
-                        # Cleanup may have removed the marker before a failed fsync.
-                        # Retain the in-memory rollback authority until commit returns.
-                        self.restore_previous(previous, runtime=True)
-                        self.fsync_directory(self.state)
-                except (ActivationError, OSError):
-                    raise ActivationError("activation failed: " + reason + "; recovery is incomplete; operator recovery is required") from None
-                raise ActivationError("activation failed: " + reason + "; previous boot and runtime configuration restored") from None
-            return "changed"
+                return "unchanged"
+            except ActivationError:
+                pass
+        self.active()
+        self.socket_metadata()
+        # The backup and marker are both durable before changing the boot file.
+        self.durable_write(self.previous, previous, 0o600, self.ids[1])
+        record = json.dumps({"previous": hashlib.sha256(previous).hexdigest(),
+                             "candidate": hashlib.sha256(candidate).hexdigest()}).encode()
+        self.durable_write(self.pending, record, 0o600, self.ids[1])
+        try:
+            self.durable_write(self.boot, candidate, 0o640, self.ids[3])
+            self.caddy("reload", self.boot)
+            self.observed(desired)
+            self.served_tls(desired)
+            self.clear_pending()
+        except (ActivationError, OSError) as failure:
+            reason = str(failure) if isinstance(failure, ActivationError) else "managed filesystem operation failed"
+            try:
+                if self.pending.exists() or self.pending.is_symlink():
+                    self.recover_pending(runtime=True)
+                else:
+                    # Cleanup may have removed the marker before a failed fsync.
+                    # Retain the in-memory rollback authority until commit returns.
+                    self.restore_previous(previous, runtime=True)
+                    self.fsync_directory(self.state)
+            except RestartRequired as recovery:
+                recovery.reason = reason
+                raise
+            except (ActivationError, OSError):
+                raise ActivationError("activation failed: " + reason + "; recovery is incomplete; operator recovery is required") from None
+            raise ActivationError("activation failed: " + reason + "; previous boot and runtime configuration restored") from None
+        return "changed"
 
     def reload(self, inherited=False):
         with self.locked(inherited=inherited):
@@ -487,9 +556,7 @@ class Activator:
             if self.pending.exists() or self.pending.is_symlink():
                 raise ActivationError("configuration recovery is required before certificate refresh")
             desired = self.validate(self.boot)
-            self.validate(self.admin)
             self.socket_metadata()
-            self.caddy("reload", self.admin)
             self.caddy("reload", self.boot)
             self.observed(desired)
 

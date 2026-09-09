@@ -318,7 +318,6 @@ class ProvisioningFlowTests(unittest.TestCase):
         )
         self.assertIn("/run/caddy", directories)
         self.assertIn("/run/lock/homelab-reverse-proxy.lock", files)
-        self.assertIn("/etc/caddy/Caddyfile.admin", files)
         self.assertIn("/etc/caddy/Caddyfile.candidate", files)
         for check in checks.values():
             self.assertIs(check["ansible.builtin.stat"]["follow"], False)

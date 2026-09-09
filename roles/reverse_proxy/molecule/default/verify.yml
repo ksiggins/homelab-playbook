@@ -331,7 +331,7 @@
         content: >-
           {{ (reverse_proxy_molecule_active_caddyfile.content | b64decode)
              | replace('bind ' ~ reverse_proxy_molecule_address,
-                       'bind ' ~ reverse_proxy_molecule_address ~ ' 10.255.255.254') }}
+                       'bind ' ~ reverse_proxy_molecule_address ~ ' 192.168.255.254') }}
         dest: /etc/caddy/Caddyfile.candidate
         owner: root
         group: caddy
@@ -354,6 +354,30 @@
       changed_when: false
       no_log: true
 
+    - name: Read the partial-start candidate listener order
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - caddy
+          - --
+          - /usr/bin/caddy
+          - adapt
+          - --config
+          - /etc/caddy/Caddyfile.candidate
+          - --adapter
+          - caddyfile
+      register: reverse_proxy_molecule_partial_candidate
+      changed_when: false
+      no_log: true
+
+    - name: Assert the synthetic unavailable address is attempted after the working listener
+      ansible.builtin.assert:
+        that:
+          - >-
+            (reverse_proxy_molecule_partial_candidate.stdout | from_json).apps.http.servers.srv0.listen
+            == [reverse_proxy_molecule_address ~ ':443', '192.168.255.254:443']
+
     - name: Attempt valid but unloadable candidate activation
       ansible.builtin.command:
         argv:
@@ -370,6 +394,12 @@
         checksum_algorithm: sha256
       register: reverse_proxy_molecule_after_unloadable_boot
 
+    - name: Read listeners after partial reload failure
+      ansible.builtin.command:
+        argv: "{{ [reverse_proxy_molecule_probe, 'listeners', reverse_proxy_molecule_address] }}"
+      register: reverse_proxy_molecule_after_unloadable_listeners
+      changed_when: false
+
     - name: Confirm the healthy route after activation failures
       ansible.builtin.command:
         argv: "{{ reverse_proxy_molecule_common_probe + ['https'] }}"
@@ -381,12 +411,18 @@
         that:
           - reverse_proxy_molecule_unloadable_apply.rc == 1
           - >-
+            (reverse_proxy_molecule_after_unloadable_listeners.stdout | from_json).tcp_443
+            == [reverse_proxy_molecule_address ~ ':443']
+          - >-
             reverse_proxy_molecule_after_unloadable_boot.stat.checksum
             == reverse_proxy_molecule_healthy_boot.stat.checksum
           - (reverse_proxy_molecule_after_failures.stdout | from_json).status == 200
           - >-
             (reverse_proxy_molecule_after_failures.stdout | from_json).body
             == 'fixture host=app.example.test path=/\n'
+        fail_msg: >-
+          Partial-start rollback did not restore one listener:
+          {{ reverse_proxy_molecule_after_unloadable_listeners.stdout }}
 
     - name: Start a WebSocket session across certificate refresh
       ansible.builtin.command:

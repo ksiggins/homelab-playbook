@@ -25,18 +25,35 @@ def load_activation():
 
 
 class HostCommands:
-    """Model Caddy's atomic load boundary and a running host without root access."""
+    """Model host commands, including Caddy partial-start failures, without root access."""
 
     def __init__(self, module, root, config):
         self.module, self.root, self.loaded = module, root, config
         self.active = True
         self.fail_reload = False
         self.reloads = 0
+        self.restarts = 0
+        self.fail_restart = False
         self.invalid = False
         self.drift_after_reload = False
         self.ss = b""
 
     def run(self, command):
+        if command == ["/usr/bin/systemctl", "restart", "caddy.service"]:
+            self.restarts += 1
+            if self.fail_restart:
+                raise self.module.ActivationError("restart failed")
+            # A real ExecStartPre must be able to acquire this lock.
+            with (self.root / "run/lock/homelab-reverse-proxy.lock").open("rb") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            if not self.activation.pending.exists():
+                raise AssertionError("restart lost its durable recovery record")
+            self.activation.recover()
+            self.loaded = json.loads(self.activation.boot.read_bytes())
+            self.ss = None
+            self.active = True
+            return b""
         if command[:2] == ["/usr/bin/systemctl", "is-active"]:
             if not self.active:
                 raise self.module.ActivationError("service inactive")
@@ -88,6 +105,9 @@ class ActivationFixture(unittest.TestCase):
         cls.module = load_activation()
 
     def setUp(self):
+        sleeper = mock.patch("time.sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
@@ -100,11 +120,9 @@ class ActivationFixture(unittest.TestCase):
         self.old = {"admin": {"listen": "unix//run/caddy/admin.sock", "config": {"persist": False}}}
         self.new = dict(self.old, logging={"logs": {"default": {"level": "WARN"}}})
         self.boot = self.root / "etc/caddy/Caddyfile"
-        self.admin = self.root / "etc/caddy/Caddyfile.admin"
         self.candidate = self.root / "etc/caddy/Caddyfile.candidate"
         self.state = self.root / "var/lib/homelab-reverse-proxy"
         self.write(self.boot, json.dumps(self.old))
-        self.write(self.admin, json.dumps(self.old))
         self.write(self.candidate, json.dumps(self.new))
         self.write(self.root / "run/lock/homelab-reverse-proxy.lock", "", 0o600)
         self.socket = socket.socket(socket.AF_UNIX)
@@ -114,6 +132,7 @@ class ActivationFixture(unittest.TestCase):
         self.commands = HostCommands(self.module, self.root, self.old)
         self.activation = self.module.Activator(self.root, self.commands,
                                               (os.getuid(), os.getgid(), os.getuid(), os.getgid()))
+        self.commands.activation = self.activation
 
     def write(self, path, text, mode=0o640):
         path.write_text(text)
@@ -129,6 +148,106 @@ class ActivationFixture(unittest.TestCase):
 
 
 class ActivationTests(ActivationFixture):
+    def configure_listener(self):
+        self.old["apps"] = {"http": {"servers": {"srv0": {
+            "listen": ["10.20.30.40:443"], "protocols": ["h1", "h2"],
+            "automatic_https": {"disable": True}}}}}
+        self.new = dict(self.old, logging={"logs": {"default": {"level": "WARN"}}})
+        self.write(self.boot, json.dumps(self.old))
+        self.write(self.candidate, json.dumps(self.new))
+        self.commands.ss = None
+
+    def duplicate_listeners(self):
+        return (b'tcp LISTEN 0 4096 10.20.30.40:443 0.0.0.0:* users:(("caddy",pid=1234,fd=9))\n'
+                b'tcp LISTEN 0 4096 10.20.30.40:443 0.0.0.0:* users:(("caddy",pid=1234,fd=10))\n')
+
+    def test_observation_rejects_duplicate_owned_listeners(self):
+        self.configure_listener()
+        self.commands.ss = self.duplicate_listeners()
+        with self.assertRaisesRegex(self.module.ActivationError, "duplicate"):
+            self.activation.observed(self.old)
+
+    def test_brief_reload_listener_overlap_does_not_restart_service(self):
+        self.configure_listener()
+        original = self.commands.run
+        snapshots = 0
+
+        def overlapping_shutdown(command):
+            nonlocal snapshots
+            if command[0] == "ss":
+                snapshots += 1
+                if snapshots <= 2:
+                    return self.duplicate_listeners()
+            return original(command)
+
+        self.commands.run = overlapping_shutdown
+        self.assertEqual(self.activation.apply(), "changed")
+        self.assertEqual(snapshots, 3)
+        self.assertEqual(self.sleep.call_count, 2)
+        self.assertEqual(self.commands.restarts, 0)
+        self.assertEqual(self.commands.loaded, self.new)
+
+    def test_partial_start_rollback_restarts_outside_deployment_lock(self):
+        self.configure_listener()
+        original = self.commands.run
+
+        def partial_start(command):
+            if "reload" in command and not self.commands.reloads:
+                self.commands.reloads += 1
+                self.commands.ss = self.duplicate_listeners()
+                raise self.module.ActivationError("partial listener start failed")
+            return original(command)
+
+        self.commands.run = partial_start
+        with self.assertRaisesRegex(self.module.ActivationError, "previous boot and runtime configuration restored"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(json.loads(self.boot.read_bytes()), self.old)
+        self.assertEqual(self.commands.loaded, self.old)
+        self.assertFalse(self.activation.pending.exists())
+        self.activation.observed(self.old)
+
+    def test_restart_failure_preserves_previous_boot_and_recovery_record(self):
+        self.configure_listener()
+        self.commands.ss = self.duplicate_listeners()
+        self.commands.fail_reload = True
+        self.commands.fail_restart = True
+        with self.assertRaisesRegex(self.module.ActivationError, "recovery is incomplete"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(json.loads(self.boot.read_bytes()), self.old)
+        self.assertTrue(self.activation.pending.exists())
+        self.assertEqual(self.activation.previous.read_bytes(), self.boot.read_bytes())
+
+    def test_pending_partial_start_is_recovered_before_another_candidate(self):
+        self.configure_listener()
+        self.pending()
+        self.commands.ss = self.duplicate_listeners()
+        with self.assertRaisesRegex(self.module.ActivationError, "previous boot and runtime configuration restored"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(json.loads(self.boot.read_bytes()), self.old)
+        self.assertFalse(self.activation.pending.exists())
+        self.assertEqual(self.activation.apply(), "changed")
+
+    def test_restart_does_not_accept_a_concurrent_boot_change(self):
+        self.configure_listener()
+        self.commands.ss = self.duplicate_listeners()
+        self.commands.fail_reload = True
+        original = self.commands.run
+
+        def competing_activation(command):
+            result = original(command)
+            if command == ["/usr/bin/systemctl", "restart", "caddy.service"]:
+                self.write(self.boot, json.dumps(self.new))
+            return result
+
+        self.commands.run = competing_activation
+        with self.assertRaisesRegex(self.module.ActivationError, "recovery is incomplete"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(json.loads(self.boot.read_bytes()), self.new)
+
     def test_success_commits_boot_and_loaded_configuration(self):
         self.assertEqual(self.activation.apply(), "changed")
         self.assertEqual(json.loads(self.boot.read_bytes()), self.new)
@@ -281,6 +400,7 @@ class ActivationTests(ActivationFixture):
 
     def test_failed_runtime_recovery_retains_pending_record(self):
         self.commands.drift_after_reload = True
+        self.commands.fail_restart = True
         original = self.commands.run
 
         def cannot_restore(command):
@@ -407,16 +527,16 @@ class ActivationTests(ActivationFixture):
             fcntl.flock(descriptor, fcntl.LOCK_EX)
             with mock.patch.object(self.module, "INHERITED_LOCK_FD", descriptor, create=True):
                 self.activation.reload(inherited=True)
-            self.assertEqual(self.commands.reloads, 2)
+            self.assertEqual(self.commands.reloads, 1)
             with self.assertRaises(BlockingIOError):
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
         finally:
             os.close(probe)
             os.close(descriptor)
 
-    def test_reload_cycles_through_admin_only_configuration(self):
+    def test_reload_forces_committed_configuration_load(self):
         self.activation.reload()
-        self.assertEqual(self.commands.reloads, 2)
+        self.assertEqual(self.commands.reloads, 1)
         self.assertEqual(self.commands.loaded, self.old)
 
     def test_unexpected_caddy_listener_fails_verification(self):
@@ -494,7 +614,7 @@ class CertificateTests(ActivationFixture):
                 self.activation.verify()
         self.assertEqual(self.commands.reloads, 1)
 
-    def test_reload_cycles_tls_app_to_refresh_caddy_cache(self):
+    def test_reload_refreshes_selected_external_certificate(self):
         base, _ = self.configure_certificate()
         self.activation.apply()
         version = base / "version-two"
@@ -519,7 +639,7 @@ class CertificateTests(ActivationFixture):
             "tls_connection_policies"
         ][0]
         self.assertEqual(["cert0"], policy["certificate_selection"]["any_tag"])
-        self.assertEqual(self.commands.reloads, 3)
+        self.assertEqual(self.commands.reloads, 2)
 
     def test_verify_uses_system_trust_sni_and_current_external_leaf(self):
         self.configure_certificate()
@@ -586,6 +706,38 @@ class CertificateTests(ActivationFixture):
         self.assertEqual(json.loads(self.boot.read_bytes()), self.old)
         self.assertEqual(self.commands.loaded, self.old)
         self.assertFalse(self.activation.pending.exists())
+
+    def test_runtime_rollback_restarts_when_previous_route_serves_wrong_leaf(self):
+        self.configure_certificate()
+        self.activation.apply()
+        previous = self.boot.read_bytes()
+        certificate = self.tls_context.wrap_socket.return_value.__enter__.return_value.getpeercert
+        certificate.return_value = b"other DER"
+        original = self.commands.run
+
+        def restart_refreshes_leaf(command):
+            result = original(command)
+            if command == ["/usr/bin/systemctl", "restart", "caddy.service"]:
+                certificate.return_value = b"synthetic DER"
+            return result
+
+        self.commands.run = restart_refreshes_leaf
+        with self.assertRaisesRegex(self.module.ActivationError, "restored after service restart"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(self.boot.read_bytes(), previous)
+        self.assertFalse(self.activation.pending.exists())
+        self.activation.verify()
+
+    def test_persistent_wrong_leaf_cannot_report_runtime_restoration(self):
+        self.configure_certificate()
+        self.activation.apply()
+        previous = self.boot.read_bytes()
+        self.tls_context.wrap_socket.return_value.__enter__.return_value.getpeercert.return_value = b"other DER"
+        with self.assertRaisesRegex(self.module.ActivationError, "recovery is incomplete"):
+            self.activation.apply()
+        self.assertEqual(self.commands.restarts, 1)
+        self.assertEqual(self.boot.read_bytes(), previous)
 
     def test_apply_rolls_back_when_tls_trust_or_hostname_verification_fails(self):
         self.configure_certificate()
