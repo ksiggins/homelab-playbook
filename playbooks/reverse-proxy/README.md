@@ -68,7 +68,7 @@ files. The certificate owner supplies
 `/etc/caddy/tls/<certificate_name>/current/fullchain.pem` and `privkey.pem`
 through an atomic version-directory pointer. Certificate generation, renewal,
 and issuer credentials belong to issue #5. The
-[certificate contract](../../docs/specs/007-shared-private-reverse-proxy.md#external-certificate-contract)
+[certificate contract](../../docs/specs/008-shared-private-reverse-proxy.md#external-certificate-contract)
 defines ownership, permissions, version selection, and the shared activation lock.
 Application authentication remains the application's responsibility; loopback
 backends remain reachable by other local accounts.
@@ -108,7 +108,7 @@ Package rollback and lost-host reconstruction require the existing OS recovery
 process and separately recoverable certificate material. Caddy caches and
 application data are outside configuration recovery.
 
-[Specification 007](../../docs/specs/007-shared-private-reverse-proxy.md) records
+[Specification 008](../../docs/specs/008-shared-private-reverse-proxy.md) records
 the deployment decision, integration contracts, recovery design, and acceptance
 requirements. Offline tests use disposable certificate and backend fixtures;
 production network reachability, physical boot, and certificate issuance remain

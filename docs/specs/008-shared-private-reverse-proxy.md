@@ -1,4 +1,4 @@
-# Specification 007: Shared private reverse proxy
+# Specification 008: Shared private reverse proxy
 
 Issue: [#25 Shared private reverse proxy for NUC #4 services](https://github.com/supermorphic/homelab-playbook/issues/25)
 

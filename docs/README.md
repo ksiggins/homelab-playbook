@@ -46,6 +46,6 @@ specifications record design decisions and integration contracts.
   reusable rootless container conventions without deploying applications.
 - [007 — Off-cluster TLS trust](specs/007-off-cluster-tls-trust.md) — Records the
   selected hybrid topology and NUC #4 certificate automation design.
-- [007 — Shared private reverse proxy](specs/007-shared-private-reverse-proxy.md) —
+- [008 — Shared private reverse proxy](specs/008-shared-private-reverse-proxy.md) —
   Defines host-level Caddy, private HTTPS routes, external certificate delivery,
   configuration recovery, and service integration contracts.
