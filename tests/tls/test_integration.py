@@ -467,33 +467,37 @@ class InterruptedPublicationTests(AdapterFixture):
         self.exercise('retirement')
 
 class DirectPreparedRecoveryTests(AdapterFixture):
-    def exercise(self, previous=False):
+    def exercise(self, previous=False, phase="prepared"):
         from tls_runtime import runtime
         if previous:
             with self.activation.locked():
                 self.publisher.publish(b'certificate-one', b'private-key-one')
         write = self.publisher._write_journal
-        def interrupt_prepared(record):
+        def interrupt_publication(record):
             write(record)
-            if record['status'] == 'prepared':
+            if record['status'] == phase:
                 raise KeyboardInterrupt()
-        self.publisher._write_journal = interrupt_prepared
+        self.publisher._write_journal = interrupt_publication
         with self.activation.locked(), self.assertRaises(KeyboardInterrupt):
             self.publisher.publish(b'certificate-two', b'private-key-two')
         self.publisher._write_journal = write
         retained = self.publisher._read_journal()
         self.assertIsNone(retained['caddy']['disk_recovery'])
         def forbidden_issuance():
-            self.fail('prepared integrated recovery must not start issuance')
+            self.fail('integrated recovery must not start issuance')
         def forbidden_snapshot():
-            self.fail('prepared integrated recovery must use its retained generation')
+            self.fail('integrated recovery must use its retained generation')
+        reloads_before = self.commands.reloads
         result = runtime.reconcile(self.publisher, forbidden_issuance, forbidden_snapshot,
                                    publication_context=self.activation.locked)
+        self.assertEqual(1, self.commands.reloads - reloads_before)
         self.assertEqual('not_run', result['issuance'])
         self.assertEqual('changed', result['publication'])
         self.assertFalse(result['activation_failed'])
         self.assertFalse(result['restoration_failed'])
         self.assertEqual(retained['generation'], os.readlink(self.integration.root / 'current'))
+        self.assertEqual(b'certificate-two', (self.integration.root / 'current/fullchain.pem').read_bytes())
+        self.assertIn('app.infra.example.com', json.dumps(self.commands.loaded))
         self.assertIn('app.infra.example.com', self.boot.read_text())
         self.assertFalse(self.activation.tls_journal.exists())
 
@@ -502,3 +506,46 @@ class DirectPreparedRecoveryTests(AdapterFixture):
 
     def test_prepared_renewal_recovers_without_startup_or_issuance(self):
         self.exercise(previous=True)
+
+    def test_first_switched_candidate_recovers_without_startup_or_issuance(self):
+        self.exercise(phase='switched')
+
+    def test_switched_renewal_recovers_without_startup_or_issuance(self):
+        self.exercise(previous=True, phase='switched')
+
+
+class DirectRestoredRecoveryTests(AdapterFixture):
+    def test_terminal_restoration_reports_failure_without_startup_or_issuance(self):
+        from tls_runtime import runtime
+        with self.activation.locked():
+            self.publisher.publish(b'certificate-one', b'private-key-one')
+        previous = self.publisher._current_name()
+        reload = self.publisher.reload_and_verify
+        write = self.publisher._write_journal
+        def activation_failure(fp):
+            reload(fp)
+            if self.publisher._current_name() != previous:
+                raise RuntimeError('injected activation failure')
+        def interrupt_terminal_cleanup(record):
+            write(record)
+            if record['status'] == 'restored':
+                raise KeyboardInterrupt()
+        self.publisher.reload_and_verify = activation_failure
+        self.publisher._write_journal = interrupt_terminal_cleanup
+        with self.activation.locked(), self.assertRaises(KeyboardInterrupt):
+            self.publisher.publish(b'certificate-two', b'private-key-two')
+        self.publisher.reload_and_verify = reload
+        self.publisher._write_journal = write
+        self.assertEqual('restored', self.publisher._read_journal()['status'])
+        def forbidden():
+            self.fail('terminal integrated recovery must not start issuance or snapshot')
+        reloads_before = self.commands.reloads
+        result = runtime.reconcile(self.publisher, forbidden, forbidden,
+                                   publication_context=self.activation.locked)
+        self.assertEqual('not_run', result['issuance'])
+        self.assertEqual('failed', result['publication'])
+        self.assertTrue(result['activation_failed'])
+        self.assertFalse(result['restoration_failed'])
+        self.assertEqual(previous, self.publisher._current_name())
+        self.assertEqual(reloads_before, self.commands.reloads)
+        self.assertFalse(self.activation.tls_journal.exists())

@@ -690,6 +690,10 @@ class Publisher:
 
         if record["status"] == "restored":
             self._finish_restored_cleanup(record)
+            if "caddy" in record:
+                return {"publication": "failed",
+                        "activation_failed": record["caddy"]["activation_failed"],
+                        "restoration_failed": record["caddy"]["restoration_failed"]}
             return
 
         self._assert_generation(generation)
@@ -697,7 +701,7 @@ class Publisher:
             self._assert_generation(str(previous))
 
         if (record["status"] in {"retry_pending", "recovered"}
-                or (record["status"] == "prepared" and "caddy" in record)
+                or ("caddy" in record and (record["status"] == "prepared" or current == generation))
                 or record.get("caddy", {}).get("disk_recovery") is not None):
             try:
                 return self._retry_retained(record)
