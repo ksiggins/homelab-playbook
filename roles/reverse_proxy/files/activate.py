@@ -125,6 +125,13 @@ class Activator:
         from proxy_manifest import Manifest
         return Manifest(self)
 
+    def install_trust(self):
+        with self.locked():
+            self.require_no_tls()
+            self.manifest()  # Establish the fixed installed module search path.
+            from proxy_manifest import Trust
+            return Trust(self).install()
+
     def require_no_tls(self):
         if os.path.lexists(self.tls_journal):
             raise ActivationError("TLS publication recovery is pending")
@@ -649,8 +656,8 @@ class Activator:
 
 def main(arguments=None):
     args = list(sys.argv[1:] if arguments is None else arguments)
-    if args not in (["apply-desired"], ["apply"], ["recover"], ["reload"], ["reload", "--lock-held"], ["verify"], ["verify", "--lock-held"]):
-        print("usage: homelab-reverse-proxy {apply|recover|reload [--lock-held]|verify [--lock-held]}", file=sys.stderr)
+    if args not in (["install-trust"], ["apply-desired"], ["apply"], ["recover"], ["reload"], ["reload", "--lock-held"], ["verify"], ["verify", "--lock-held"]):
+        print("usage: homelab-reverse-proxy {apply|apply-desired|install-trust|recover|reload [--lock-held]|verify [--lock-held]}", file=sys.stderr)
         return 2
     try:
         if os.geteuid() != 0:
@@ -659,8 +666,13 @@ def main(arguments=None):
         if args[0] in ("reload", "verify"):
             getattr(activator, args[0])(inherited=len(args) == 2)
         else:
-            result = activator.apply(desired=True) if args[0] == "apply-desired" else getattr(activator, args[0])()
-            if args[0] in ("apply", "apply-desired"):
+            if args[0] == "apply-desired":
+                result = activator.apply(desired=True)
+            elif args[0] == "install-trust":
+                result = activator.install_trust()
+            else:
+                result = getattr(activator, args[0])()
+            if args[0] in ("apply", "apply-desired", "install-trust"):
                 print(result)
         return 0
     except ActivationError as error:
