@@ -4,8 +4,9 @@ Issue: [#5](https://github.com/supermorphic/homelab-playbook/issues/5)
 
 Status: hybrid topology and architecture approved with review refinements below.
 The guides describe operator procedures. Host automation is implemented by the
-`tls_automation` role and `tls` playbooks. Live deployment and the Caddy adapter
-remain dependent on issue #25; the private device routes are not yet deployed.
+`tls_automation` role and `tls` playbooks. Issue #25 supplied the host Caddy
+deployment. Issue #5 owns its TLS adapter and integration; the private device
+routes and live TLS renewal still require operator deployment and evidence.
 
 ## Decision and ownership
 
@@ -127,7 +128,9 @@ same root coordinator is used by the authorized Ansible renewal action. Its
 executable, units, configuration, and parent directories are root-owned and not
 writable by the issuer or proxy accounts.
 
-The coordinator performs this sequence under one root-owned exclusive lock:
+The coordinator serializes renewal with its root-owned TLS lock. Publication
+additionally takes the shared Caddy deployment lock, always after the TLS lock.
+It releases the Caddy lock during the ACME network request.
 
 1. Load the fixed root-owned `/etc/homelab-tls/config.json` and validate its
    schema, ownership, paths, and exact approved SAN set. Reject command fields,
@@ -146,15 +149,15 @@ The coordinator performs this sequence under one root-owned exclusive lock:
    perform rollback when required. All these steps run in the root coordinator.
    It generates publication identifiers and destinations itself beneath the
    approved root. Caddy validation and reload use fixed argument vectors in a
-   root-owned integration adapter installed for issue #25's selected runtime;
+   root-owned integration adapter for the host Caddy runtime;
    they are never shell strings or issuer-controlled arguments. The adapter is
    fixed at `/usr/local/libexec/homelab-tls-caddy`. Its only actions are
    `validate <root-owned-candidate-directory>`, `reload`, and `deactivate`.
    `reload` must force certificate file reopening. `deactivate` removes a failed
    first deployment's routes and proves them inactive when no previous
-   generation exists. Issue #25 implements these operations for its selected
-   runtime. Missing integration fails before issuance; no successful stub is
-   installed.
+   generation exists. Issue #5 implements these operations for the host Caddy
+   runtime supplied by issue #25. Missing integration fails before issuance;
+   no successful stub is installed.
 5. Record issuance and publication results separately. A failed issuance does
    not prevent validation and retry of an already-issued pending certificate,
    but remains visible in the overall result. No valid pending candidate means
@@ -180,22 +183,19 @@ one administrator-owned certificate root. Publish both as a generation, then
 atomically replace a relative `current` symlink to a complete generation beneath
 that same root. Keep the parent root directory itself stable; do not replace it
 during publication or rollback. The implementation must
-bind the root path and proxy read access to issue #25's actual runtime contract.
-Do not install guessed service names, UID allocations, or reload commands while
-that implementation is absent from this checkout.
+use `/etc/caddy/tls/infra` for the host Caddy deployment. The service runs as
+`caddy:caddy`; resolve its package-created group by name instead of allocating
+a new numeric proxy identity. Directories are `root:caddy` mode `0750`, files
+are `root:caddy` mode `0640`, and the relative `current` link is owned by
+`root:caddy`. Apply the required platform labels before candidate validation.
 
-If issue #25 selects containerized Caddy, bind-mount the stable parent certificate
-root read-only into the container. Do not mount `current`, its resolved generation
-directory, or individual certificate files. For example, mounting the host
-publication root at `/etc/caddy/certificates` lets Caddy read
-`/etc/caddy/certificates/current/fullchain.pem` and
-`/etc/caddy/certificates/current/privkey.pem`. Relative symlink targets must remain
-within that mounted root. Each switch and rollback is therefore visible on the
-next file open in the existing container; force reload to reopen the files
-without recreating the container. Ensure new generations have the required
-numeric ownership, read permissions, and SELinux labels before switching, not
-only when the mount is first created. The mount contains only published
-generations, never issuer state, credential sources, or candidate snapshots.
+Certificate preparation is a production operation, not an ACME staging test.
+Keep its snapshots, temporary generations, transaction journal, and retirement
+artifacts in the root-only `/etc/caddy/tls/.homelab-tls-private` directory.
+Preparation and publication must remain on the same filesystem so atomic moves
+cannot fail across a separate `/var` mount. Caddy cannot traverse this private
+directory. Coordinator status and its private lock remain under
+`/var/lib/homelab-tls`; issuer state remains separate.
 
 Before publication, copy bounded regular-file inputs into an administrator-owned
 snapshot without following untrusted symlinks. Validate only that immutable
@@ -327,11 +327,11 @@ metadata, and arguments. Verify that the issuer cannot write coordinator policy
 or published generations and that no such input changes the fixed privileged
 operation. Exercise pending publication retry after issuance failure.
 
-For containerized Caddy, a bounded registered container test mounts the stable
-parent once, publishes a replacement generation, forces reload, and checks the
-new served fingerprint without container recreation. Roll back and check the
-previous fingerprint in the same container. Assert the container identity is
-unchanged and include the supported platform's file-label and permission checks.
+For host Caddy, bounded registered disposable Debian and Rocky tests publish a
+replacement generation, force one reload, and check the new served fingerprint.
+Roll back and check the previous fingerprint. Include first publication,
+failed first publication with unrelated routes, interrupted recovery, concurrent
+configuration and certificate operations, and platform permission checks.
 Use independent cryptographic checks and effective system state as oracles.
 Bounded local TLS servers prove served-certificate checks; no Cloudflare token,
 production ACME request, or inventory host is available to CI.

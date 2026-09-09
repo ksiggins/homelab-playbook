@@ -4,8 +4,9 @@ The selected [hybrid TLS design](../specs/007-off-cluster-tls-trust.md) includes
 private HTTPS browser access to device management interfaces through the shared
 Caddy proxy on NUC #4. The host issuer and certificate publication capability
 are implemented with automatic renewal disabled by default; see the
-[TLS playbook README](../../playbooks/tls/README.md). The Caddy adapter and live
-device routes remain undeployed. Use this guide for their configuration and
+[TLS playbook README](../../playbooks/tls/README.md). The TLS role installs the
+Caddy adapter; live device routes require operator configuration and deployment.
+Use this guide for their configuration and
 acceptance procedure; it does not claim operational routes.
 
 Use one explicit route per device. Caddy presents the separately managed public
@@ -78,6 +79,32 @@ back to HTTP for a device that is expected to support authenticated HTTPS. After
 a device replacement or firmware change that replaces its certificate, repeat
 trust establishment before updating the route's trust material.
 
+Declare the route and its trust bundle in protected host variables. The following
+values are synthetic; replace the address, certificate name, and PEM placeholder
+with independently verified device inputs before deployment:
+
+```yaml
+reverse_proxy_deferred_certificates: [infra]
+reverse_proxy_routes:
+  - hostname: modem.infra.example.com
+    certificate_name: infra
+    backend:
+      transport: https
+      address: 10.20.30.50
+      port: 443
+      server_name: modem.example.test
+      trust_name: modem_v1
+reverse_proxy_trust_certificates:
+  modem_v1: |
+    <verified PEM trust bundle>
+```
+
+`server_name` must match the device certificate. The role installs `modem_v1`
+as `/etc/caddy/trust/modem_v1.pem`; only root can write it and Caddy can read it.
+An existing trust name cannot receive different contents. For a replacement
+certificate, add a new name such as `modem_v2` and update the route to use it.
+Keeping the old bundle lets a configuration rollback retain its previous trust.
+
 ### HTTP-only devices
 
 For the Room Alert 3E example, configure Caddy to use the explicit
@@ -94,6 +121,23 @@ between Caddy and the device. Do not describe this route as end-to-end encrypted
 Do not add a TLS trust pool, TLS server name, or disabled-verification option to
 an HTTP route. If a future firmware or replacement device provides HTTPS,
 evaluate and test authenticated HTTPS before changing the backend transport.
+
+Add the HTTP route to the same authoritative `reverse_proxy_routes` list:
+
+```yaml
+  - hostname: room-alert.infra.example.com
+    certificate_name: infra
+    backend:
+      transport: http
+      address: 10.20.30.60
+      port: 80
+```
+
+The address is synthetic. Both examples require private listener addresses and
+client networks as described in the
+[proxy README](../../playbooks/reverse-proxy/README.md). With `infra` explicitly
+deferred, provisioning saves these routes before the first certificate exists.
+Successful certificate publication activates them together.
 
 The proxy does not need stored administrator passwords for either transport; it
 forwards the browser session. Keep device certificate material and protected
