@@ -697,6 +697,7 @@ class Publisher:
             self._assert_generation(str(previous))
 
         if (record["status"] in {"retry_pending", "recovered"}
+                or (record["status"] == "prepared" and "caddy" in record)
                 or record.get("caddy", {}).get("disk_recovery") is not None):
             try:
                 return self._retry_retained(record)

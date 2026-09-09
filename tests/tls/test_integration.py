@@ -465,3 +465,40 @@ class InterruptedPublicationTests(AdapterFixture):
 
     def test_interrupted_retirement_does_not_require_deleted_candidate(self):
         self.exercise('retirement')
+
+class DirectPreparedRecoveryTests(AdapterFixture):
+    def exercise(self, previous=False):
+        from tls_runtime import runtime
+        if previous:
+            with self.activation.locked():
+                self.publisher.publish(b'certificate-one', b'private-key-one')
+        write = self.publisher._write_journal
+        def interrupt_prepared(record):
+            write(record)
+            if record['status'] == 'prepared':
+                raise KeyboardInterrupt()
+        self.publisher._write_journal = interrupt_prepared
+        with self.activation.locked(), self.assertRaises(KeyboardInterrupt):
+            self.publisher.publish(b'certificate-two', b'private-key-two')
+        self.publisher._write_journal = write
+        retained = self.publisher._read_journal()
+        self.assertIsNone(retained['caddy']['disk_recovery'])
+        def forbidden_issuance():
+            self.fail('prepared integrated recovery must not start issuance')
+        def forbidden_snapshot():
+            self.fail('prepared integrated recovery must use its retained generation')
+        result = runtime.reconcile(self.publisher, forbidden_issuance, forbidden_snapshot,
+                                   publication_context=self.activation.locked)
+        self.assertEqual('not_run', result['issuance'])
+        self.assertEqual('changed', result['publication'])
+        self.assertFalse(result['activation_failed'])
+        self.assertFalse(result['restoration_failed'])
+        self.assertEqual(retained['generation'], os.readlink(self.integration.root / 'current'))
+        self.assertIn('app.infra.example.com', self.boot.read_text())
+        self.assertFalse(self.activation.tls_journal.exists())
+
+    def test_first_prepared_candidate_recovers_without_startup_or_issuance(self):
+        self.exercise()
+
+    def test_prepared_renewal_recovers_without_startup_or_issuance(self):
+        self.exercise(previous=True)
