@@ -594,6 +594,11 @@ class MoleculeScenarioContractTests(unittest.TestCase):
 
     def test_baseline_verify_is_independent_and_states_evidence_limits(self) -> None:
         verify = load_baseline_yaml("verify.yml")[0]
+        self.assertEqual(
+            {"file": "{{ playbook_dir }}/vars/tls.yml"},
+            verify.get("pre_tasks", [{}])[0].get("ansible.builtin.include_vars"),
+            "Proxy declarations must persist into the standalone OS verification play",
+        )
         self.assertEqual("os_managed", verify["hosts"])
         self.assertIs(verify["gather_facts"], True)
         self.assertIs(verify["become"], True)

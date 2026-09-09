@@ -3,8 +3,10 @@
   hosts: os_managed
   gather_facts: true
   become: true
-  vars_files:
-    - vars/tls.yml
+  pre_tasks:
+    - name: Load proxy declarations for all standalone verification plays
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/vars/tls.yml"
   vars:
     system_maintenance_molecule_baseline_expected_authorized_key: >-
       {{ lookup(
