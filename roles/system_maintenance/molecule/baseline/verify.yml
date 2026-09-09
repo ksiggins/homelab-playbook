@@ -1101,6 +1101,7 @@
             mode: '0755'
           loop:
             - tests/tls
+            - tests/ansible
             - roles/tls_automation/files
             - roles/reverse_proxy/files
             - roles/reverse_proxy/filter_plugins
@@ -1129,6 +1130,15 @@
               destination: roles/reverse_proxy/files/manifest.py
             - source: /usr/local/lib/homelab-reverse-proxy/proxy_config.py
               destination: roles/reverse_proxy/filter_plugins/proxy.py
+
+        - name: Copy the bounded proxy fixtures used by TLS integration tests
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../../../../tests/ansible/{{ item }}"
+            dest: "{{ system_maintenance_molecule_tls_test_root.path }}/tests/ansible/{{ item }}"
+            mode: '0644'
+          loop:
+            - test_reverse_proxy_activation.py
+            - test_proxy_manifest_runtime.py
 
         - name: Run TLS tests with distribution Python and cryptography
           ansible.builtin.command:

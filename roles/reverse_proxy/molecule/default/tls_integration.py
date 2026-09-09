@@ -142,7 +142,31 @@ def start_devices(address):
     return servers
 
 
-def publish(runtime, policy, number, reject_after_serving=False):
+def fail_native_load(policy):
+    """Reproduce the existing partial-listener regression on the real service."""
+    address = policy.endpoints[0]["address"]
+    candidate = Path("/etc/caddy/Caddyfile.fixture-failed-load")
+    contents = Path("/etc/caddy/Caddyfile").read_text()
+    changed = contents.replace("bind " + address, "bind " + address + " 192.168.255.254")
+    if changed == contents:
+        raise AssertionError("fixture failed to construct the unavailable listener")
+    try:
+        candidate.write_text(changed)
+        os.chown(candidate, 0, policy.reader_gid)
+        candidate.chmod(0o640)
+        command(["/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", "reload",
+                 "--config", str(candidate), "--adapter", "caddyfile",
+                 "--address", "unix//run/caddy/admin.sock", "--force"], expected=1)
+    finally:
+        candidate.unlink(missing_ok=True)
+
+
+def caddy_pid():
+    return command(["/usr/bin/systemctl", "show", "--property=MainPID", "--value",
+                    "caddy.service"]).stdout.strip()
+
+
+def publish(runtime, policy, number, reject_after_serving=False, partial_listener=False):
     original = runtime.verify_endpoints
     rejected = False
 
@@ -151,6 +175,8 @@ def publish(runtime, policy, number, reject_after_serving=False):
         original(selected_policy, digest)
         if reject_after_serving and not rejected:
             rejected = True
+            if partial_listener:
+                fail_native_load(selected_policy)
             raise ValueError("disposable post-activation failure")
 
     with mock.patch.object(runtime, "verify_endpoints", verify):
@@ -220,6 +246,23 @@ def run(runtime, policy):
         if runtime.JOURNAL.exists() or served(address, next(iter(MANAGED))) != fingerprint(2):
             raise AssertionError("renewal rollback did not restore the old served leaf")
         print("PASS renewal, served-leaf replacement and rollback", flush=True)
+
+        previous_pid = caddy_pid()
+        try:
+            publish(runtime, policy, 3, reject_after_serving=True, partial_listener=True)
+        except PublicationError as error:
+            if error.restoration_failed:
+                raise
+        else:
+            raise AssertionError("partial listener failure unexpectedly succeeded")
+        if caddy_pid() == previous_pid or runtime.JOURNAL.exists():
+            raise AssertionError("automatic restart did not finish coupled rollback recovery")
+        for name in MANAGED:
+            if served(address, name) != fingerprint(2):
+                raise AssertionError("automatic restart did not restore the previous certificate")
+        if served(address, "other.example.test") != original_unrelated:
+            raise AssertionError("automatic restart changed unrelated TLS")
+        print("PASS automatic rollback restart outside deployment lock", flush=True)
 
         for stage, number in (("prepared", 3), ("switched", 4)):
             command([sys.executable, __file__, "crash", stage, str(number)], expected=86)
