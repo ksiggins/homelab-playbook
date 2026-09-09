@@ -77,7 +77,11 @@
     - {path: /etc/caddy, kind: directory, owner: root, group: caddy, mode: '0750'}
     - {path: /etc/caddy/tls, kind: directory, owner: root, group: caddy, mode: '0750'}
     - {path: /etc/caddy/Caddyfile, kind: file, owner: root, group: caddy, mode: '0640'}
-    - {path: /etc/caddy/Caddyfile.candidate, kind: file, owner: root, group: caddy, mode: '0640'}
+    - {path: /var/lib/homelab-reverse-proxy/desired.json, kind: file, owner: root, group: root, mode: '0600'}
+    - {path: /etc/caddy/trust, kind: directory, owner: root, group: caddy, mode: '0750'}
+    - {path: /usr/local/lib/homelab-reverse-proxy, kind: directory, owner: root, group: root, mode: '0755'}
+    - {path: /usr/local/lib/homelab-reverse-proxy/proxy_config.py, kind: file, owner: root, group: root, mode: '0644'}
+    - {path: /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py, kind: file, owner: root, group: root, mode: '0644'}
     - {path: /var/lib/caddy, kind: directory, owner: caddy, group: caddy, mode: '0700'}
     - {path: /var/lib/homelab-reverse-proxy, kind: directory, owner: root, group: root, mode: '0700'}
     - {path: /var/lib/homelab-reverse-proxy/managed, kind: file, owner: root, group: root, mode: '0600'}
@@ -109,18 +113,30 @@
   loop_control:
     label: "{{ item.item.path }}"
 
-- name: Verify committed configuration matches declared routes
+- name: Read the protected committed desired manifest
+  ansible.builtin.slurp:
+    src: /var/lib/homelab-reverse-proxy/desired.json
+  register: reverse_proxy_verify_manifest
+  no_log: true
+
+- name: Verify committed desired configuration matches declared routes
+  vars:
+    reverse_proxy_verify_envelope: "{{ reverse_proxy_verify_manifest.content | b64decode | from_json }}"
   ansible.builtin.assert:
     that:
+      - reverse_proxy_verify_envelope.version == 1
+      - reverse_proxy_verify_envelope.ingress.version == 1
       - >-
-        reverse_proxy_verify_paths.results[2].stat.checksum
-        == (lookup(
-              'ansible.builtin.template',
-              'Caddyfile.j2'
-            ) | hash('sha256'))
+        (reverse_proxy_verify_envelope.manifest | from_json | reverse_proxy_validate)
+        == reverse_proxy_config
+      - >-
+        reverse_proxy_verify_envelope.ingress.manifest_sha256
+        == (reverse_proxy_verify_envelope.manifest | hash('sha256'))
+      - reverse_proxy_verify_envelope.ingress.listen_addresses == reverse_proxy_config.bind_addresses
+      - reverse_proxy_verify_envelope.ingress.https_client_networks == reverse_proxy_config.client_sources
     fail_msg: >-
-      The committed Caddy configuration does not match the declared reverse
-      proxy routes
+      The committed desired manifest does not match the declared reverse proxy
+      routes and verified ingress policy
   no_log: true
 
 - name: Read installed Caddy version

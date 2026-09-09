@@ -122,6 +122,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             "diagnose.py",
             "probe.py",
             "rotation.py",
+            "tls_integration.py",
         }
         self.assertEqual(
             required,
@@ -132,7 +133,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            {"certificate_failure.yml", "unexpected_failure.yml"},
+            {"certificate_failure.yml", "unexpected_failure.yml", "tls-integration.yml"},
             {
                 path.name
                 for path in (REVERSE_PROXY_SCENARIO_DIRECTORY / "tasks").iterdir()
@@ -545,7 +546,8 @@ class MoleculeScenarioContractTests(unittest.TestCase):
         )
         self.assertEqual(1, len(documents))
         key_play = documents[0][0]
-        imported_playbook = documents[0][1]
+        imported_playbook = next(play for play in documents[0]
+                                 if "ansible.builtin.import_playbook" in play)
         key_source = str(key_play)
         self.assertIn("molecule_ephemeral_directory", key_source)
         self.assertIn("ssh-keygen", key_source)

@@ -1,0 +1,99 @@
+---
+- name: Read the disposable device trust bundle
+  ansible.builtin.slurp:
+    src: /var/lib/reverse-proxy-molecule/ca.pem
+  register: reverse_proxy_molecule_device_trust
+
+- name: Declare synthetic integrated application and device routes
+  ansible.builtin.set_fact:
+    reverse_proxy_molecule_tls_routes:
+      - hostname: other.example.test
+        backend_port: 18080
+        certificate_name: fixture
+      - hostname: room-alert.infra.example.com
+        certificate_name: infra
+        backend:
+          transport: http
+          address: "{{ reverse_proxy_molecule_address }}"
+          port: 80
+      - hostname: modem.infra.example.com
+        certificate_name: infra
+        backend:
+          transport: https
+          address: "{{ reverse_proxy_molecule_address }}"
+          port: 18443
+          server_name: app.example.test
+          trust_name: device_fixture_v1
+
+- name: Provision declared routes with the first infra certificate pending  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.include_role:
+    name: reverse_proxy
+  vars:
+    reverse_proxy_bind_addresses: ["{{ reverse_proxy_molecule_address }}"]
+    reverse_proxy_client_sources: ["{{ reverse_proxy_molecule_address }}/32"]
+    reverse_proxy_routes: "{{ reverse_proxy_molecule_tls_routes }}"
+    reverse_proxy_deferred_certificates: [infra]
+    reverse_proxy_trust_certificates:
+      device_fixture_v1: "{{ reverse_proxy_molecule_device_trust.content | b64decode }}"
+    security_baseline_apply_firewall_runtime: false
+    os_baseline_verify_runtime_controls: false
+
+- name: Install the real TLS capability without an ACME credential  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.include_role:
+    name: tls_automation
+  vars:
+    tls_automation_namespace: infra.example.com
+    tls_automation_email: acme@example.com
+    tls_automation_issuer_uid: 2010
+    tls_automation_issuer_gid: 2010
+    tls_automation_timer_enabled: false
+    reverse_proxy_bind_addresses: ["{{ reverse_proxy_molecule_address }}"]
+    reverse_proxy_client_sources: ["{{ reverse_proxy_molecule_address }}/32"]
+    reverse_proxy_routes: "{{ reverse_proxy_molecule_tls_routes }}"
+    reverse_proxy_deferred_certificates: [infra]
+
+- name: Install the bounded integrated TLS evidence driver
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/tls_integration.py"
+    dest: /usr/local/libexec/reverse-proxy-molecule-tls-integration.py
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create disposable issued material without contacting ACME
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/reverse-proxy-molecule-tls-integration.py, prepare]
+  changed_when: false
+
+- name: Exercise real publication with the coordinator filesystem restrictions
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemd-run
+      - --unit=reverse-proxy-molecule-tls-evidence
+      - --wait
+      - --pipe
+      - --collect
+      - --property=User=root
+      - --property=Group=root
+      - --property=NoNewPrivileges=yes
+      - --property=ProtectSystem=strict
+      - --property=ProtectHome=yes
+      - --property=PrivateTmp=yes
+      - --property=PrivateDevices=yes
+      - --property=ReadWritePaths=/var/lib/homelab-tls /etc/caddy /var/lib/homelab-reverse-proxy
+      - --property=TimeoutStartSec=10min
+      - /usr/bin/python3
+      - /usr/local/libexec/reverse-proxy-molecule-tls-integration.py
+  register: reverse_proxy_molecule_tls_evidence
+  changed_when: false
+
+- name: Report integrated TLS evidence
+  ansible.builtin.debug:
+    var: reverse_proxy_molecule_tls_evidence.stdout_lines
+
+- name: Require the production renewal timer to remain disabled in the fixture
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-enabled, homelab-tls-renew.timer]
+  register: reverse_proxy_molecule_tls_timer
+  changed_when: false
+  failed_when: reverse_proxy_molecule_tls_timer.stdout | trim != 'disabled'

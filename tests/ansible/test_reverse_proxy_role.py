@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import configparser
+import copy
+import hashlib
 import importlib.util
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -317,6 +320,7 @@ class ProvisioningFlowTests(unittest.TestCase):
                 "/etc/tmpfiles.d",
                 "/usr",
                 "/usr/local",
+                "/usr/local/lib",
                 "/var",
                 "/var/lib",
                 "/run",
@@ -633,7 +637,7 @@ class ProvisioningFlowTests(unittest.TestCase):
         )
         self.assertLess(
             names.index("Verify shared host firewall policy"),
-            names.index("Render candidate reverse proxy configuration"),
+            names.index("Install candidate desired reverse proxy manifest"),
         )
         self.assertLess(
             names.index("Start committed reverse proxy configuration"),
@@ -647,7 +651,7 @@ class ProvisioningFlowTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            {"argv": ["/usr/local/libexec/homelab-reverse-proxy", "apply"]},
+            {"argv": ["/usr/local/libexec/homelab-reverse-proxy", "apply-desired"]},
             task["ansible.builtin.command"],
         )
         self.assertEqual("reverse_proxy_activation.stdout | trim == 'changed'", task["changed_when"])
@@ -765,18 +769,46 @@ class ObservationalVerificationTests(unittest.TestCase):
         self.assertIn("^Gid:", process_conditions)
         self.assertIn("^Groups:", process_conditions)
 
-    def test_verify_compares_committed_config_to_declared_routes(self) -> None:
+    def test_verify_compares_committed_manifest_to_declared_routes_and_ingress(self) -> None:
+        from ansible.plugins.filter.core import FilterModule
+
         task = named_task(
             load_tasks("verify.yml"),
-            "Verify committed configuration matches declared routes",
+            "Verify committed desired configuration matches declared routes",
         )
         conditions = task["ansible.builtin.assert"]["that"]
+        environment = Environment(undefined=StrictUndefined)
+        environment.filters.update(FilterModule().filters())
+        spec = importlib.util.spec_from_file_location("manifest_filter", ROLE_ROOT / "filter_plugins/proxy.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        environment.filters.update(module.FilterModule().filters())
+        config = {"bind_addresses": ["10.20.30.40"], "client_sources": ["10.20.0.0/16"],
+                  "routes": [], "deferred_certificates": ["infra"]}
+        manifest = json.dumps(config) + "\n"
+        envelope = {"version": 1, "manifest": manifest, "ingress": {
+            "version": 1, "manifest_sha256": hashlib.sha256(manifest.encode()).hexdigest(),
+            "listen_addresses": config["bind_addresses"],
+            "https_client_networks": config["client_sources"],
+        }}
 
-        self.assertEqual(1, len(conditions))
-        self.assertIn("reverse_proxy_verify_paths.results[2].stat.checksum", conditions[0])
-        self.assertIn("lookup(", conditions[0])
-        self.assertIn("'ansible.builtin.template'", conditions[0])
-        self.assertIn("'Caddyfile.j2'", conditions[0])
+        def accepted(value):
+            return all(environment.compile_expression(condition)(
+                reverse_proxy_verify_envelope=value, reverse_proxy_config=config
+            ) for condition in conditions)
+
+        self.assertTrue(accepted(envelope))
+        for field, value in (("listen_addresses", ["10.20.30.41"]),
+                             ("https_client_networks", ["10.0.0.0/8"]),
+                             ("manifest_sha256", "0" * 64)):
+            changed = copy.deepcopy(envelope)
+            changed["ingress"][field] = value
+            self.assertFalse(accepted(changed), field)
+        changed = copy.deepcopy(envelope)
+        changed_config = dict(config, deferred_certificates=[])
+        changed["manifest"] = json.dumps(changed_config)
+        changed["ingress"]["manifest_sha256"] = hashlib.sha256(changed["manifest"].encode()).hexdigest()
+        self.assertFalse(accepted(changed))
 
 
 if __name__ == "__main__":

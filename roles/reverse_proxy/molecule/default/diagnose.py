@@ -141,6 +141,13 @@ def main():
         helper = load_helper()
         activator = helper.Activator()
         activator.preflight()
+        if not activator.candidate.exists():
+            try:
+                activator.manifest().candidate()
+            except Exception as error:
+                print(json.dumps({"stage": "desired-manifest",
+                                  "error_type": type(error).__name__}, sort_keys=True))
+                return 1
         adapted = activator.adapted(activator.candidate)
         activator.certificates(adapted)
         activator.caddy("validate", activator.candidate)

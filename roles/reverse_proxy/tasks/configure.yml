@@ -10,6 +10,7 @@
     - /etc/tmpfiles.d
     - /usr
     - /usr/local
+    - /usr/local/lib
     - /var
     - /var/lib
     - /run
@@ -42,6 +43,8 @@
   loop:
     - /etc/caddy
     - /etc/caddy/tls
+    - /etc/caddy/trust
+    - /usr/local/lib/homelab-reverse-proxy
     - /var/lib/caddy
     - /var/lib/homelab-reverse-proxy
     - /usr/local/libexec
@@ -81,6 +84,12 @@
     - /etc/caddy/Caddyfile.candidate
     - /var/lib/homelab-reverse-proxy/managed
     - /usr/local/libexec/homelab-reverse-proxy
+    - /usr/local/lib/homelab-reverse-proxy/proxy_config.py
+    - /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py
+    - /var/lib/homelab-reverse-proxy/desired.candidate.json
+    - /var/lib/homelab-reverse-proxy/ingress.candidate.json
+    - /var/lib/homelab-reverse-proxy/trust.candidate.json
+    - /var/lib/homelab-reverse-proxy/desired.json
     - /etc/systemd/system/caddy.service.d/override.conf
     - /etc/tmpfiles.d/homelab-reverse-proxy.conf
     - /run/lock/homelab-reverse-proxy.lock
@@ -114,6 +123,8 @@
   loop:
     - {path: /etc/caddy, group: caddy, mode: '0750'}
     - {path: /etc/caddy/tls, group: caddy, mode: '0750'}
+    - {path: /etc/caddy/trust, group: caddy, mode: '0750'}
+    - {path: /usr/local/lib/homelab-reverse-proxy, group: root, mode: '0755'}
     - {path: /var/lib/homelab-reverse-proxy, group: root, mode: '0700'}
     - {path: /usr/local/libexec, group: root, mode: '0755'}
     - {path: /etc/systemd/system/caddy.service.d, group: root, mode: '0755'}
@@ -158,6 +169,22 @@
     group: root
     mode: '0755'
 
+- name: Install the shared strict proxy renderer
+  ansible.builtin.copy:
+    src: "{{ role_path }}/filter_plugins/proxy.py"
+    dest: /usr/local/lib/homelab-reverse-proxy/proxy_config.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the desired manifest runtime
+  ansible.builtin.copy:
+    src: manifest.py
+    dest: /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Install reverse proxy volatile path policy
   ansible.builtin.template:
     src: homelab-reverse-proxy.tmpfiles.j2
@@ -192,6 +219,49 @@
     mode: '0600'
     access_time: preserve
     modification_time: preserve
+
+- name: Prepare declared device trust for fixed installation
+  ansible.builtin.copy:
+    content: "{{ reverse_proxy_trust_certificates | to_json(sort_keys=true) }}"
+    dest: /var/lib/homelab-reverse-proxy/trust.candidate.json
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Install immutable device trust under the deployment lock
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/homelab-reverse-proxy, install-trust]
+  register: reverse_proxy_trust_installation
+  changed_when: reverse_proxy_trust_installation.stdout | trim == 'changed'
+  no_log: true
+
+- name: Observe each declared immutable device trust bundle
+  ansible.builtin.stat:
+    path: "/etc/caddy/trust/{{ item.key }}.pem"
+    follow: false
+    checksum_algorithm: sha256
+    get_mime: false
+    get_attributes: false
+  loop: "{{ reverse_proxy_trust_certificates | dict2items }}"
+  register: reverse_proxy_installed_trust
+  no_log: true
+
+- name: Require this deployment's exact immutable trust contents
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.gr_name | default('') == 'caddy'
+      - item.stat.nlink | default(0) == 1
+      - item.stat.mode | default('') == '0640'
+      - item.stat.checksum | default('') == (item.item.value | hash('sha256'))
+    fail_msg: The immutable trust name differs from this declaration; use a new name
+  loop: "{{ reverse_proxy_installed_trust.results }}"
+  no_log: true
 
 - name: Install hardened reverse proxy systemd override
   ansible.builtin.template:

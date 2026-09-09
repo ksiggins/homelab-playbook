@@ -248,6 +248,11 @@
         loop_var: reverse_proxy_molecule_certificate_failure
         label: "{{ reverse_proxy_molecule_certificate_failure.name }}"
 
+    - name: Isolate legacy Caddyfile fault injection from managed manifest ownership
+      ansible.builtin.file:
+        path: /var/lib/homelab-reverse-proxy/desired.json
+        state: absent
+
     - name: Start a WebSocket session across failed validation
       ansible.builtin.command:
         argv: >-
@@ -729,6 +734,9 @@
           - >-
             reverse_proxy_molecule_external_certificates.results
             | map(attribute='stat.mode') | list | unique == ['0640']
+
+    - name: Exercise the installed TLS and Caddy integration
+      ansible.builtin.include_tasks: tasks/tls-integration.yml
 
     - name: Report rootless firewall runtime evidence boundary
       ansible.builtin.debug:

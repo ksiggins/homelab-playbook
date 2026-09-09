@@ -2,3 +2,5 @@
 reverse_proxy_bind_addresses: []
 reverse_proxy_client_sources: []
 reverse_proxy_routes: []
+reverse_proxy_deferred_certificates: []
+reverse_proxy_trust_certificates: {}

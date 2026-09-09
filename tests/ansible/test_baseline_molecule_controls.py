@@ -166,6 +166,21 @@ class FirewallOracleTests(unittest.TestCase):
         zone, direct = exact_firewall_results()
         self.assertEqual([], self.errors(zone, direct))
 
+    def test_deferred_proxy_requires_only_its_declared_https_source(self) -> None:
+        zone, direct = exact_firewall_results()
+        observed = next(item for item in zone if item["item"] == "--list-rich-rules")
+        check = lambda: self.controls.system_maintenance_molecule_baseline_firewall_errors(
+            "DefaultZone=homelab\n", zone, direct,
+            "homelab\n  interfaces:\n  sources:\n", DEBIAN_FIREWALL_POLICY,
+            "Debian", ["10.20.30.40/32"])
+        self.assertIn("rich-rules", check())
+        observed["stdout_lines"].append(
+            'rule family="ipv4" source address="10.20.30.40/32" '
+            'port port="443" protocol="tcp" accept')
+        self.assertEqual([], check())
+        observed["stdout_lines"].append(observed["stdout_lines"][-1])
+        self.assertIn("rich-rules", check())
+
     def test_wrong_or_duplicate_default_zone_is_rejected(self) -> None:
         zone, direct = exact_firewall_results()
         for configuration in (

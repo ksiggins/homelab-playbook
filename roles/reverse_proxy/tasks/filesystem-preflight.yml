@@ -10,6 +10,7 @@
     - /etc/tmpfiles.d
     - /usr
     - /usr/local
+    - /usr/local/lib
     - /var
     - /var/lib
     - /run
@@ -42,6 +43,8 @@
   loop:
     - /etc/caddy
     - /etc/caddy/tls
+    - /etc/caddy/trust
+    - /usr/local/lib/homelab-reverse-proxy
     - /var/lib/caddy
     - /var/lib/homelab-reverse-proxy
     - /usr/local/libexec
@@ -81,6 +84,12 @@
     - /etc/caddy/Caddyfile.candidate
     - /var/lib/homelab-reverse-proxy/managed
     - /usr/local/libexec/homelab-reverse-proxy
+    - /usr/local/lib/homelab-reverse-proxy/proxy_config.py
+    - /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py
+    - /var/lib/homelab-reverse-proxy/desired.candidate.json
+    - /var/lib/homelab-reverse-proxy/ingress.candidate.json
+    - /var/lib/homelab-reverse-proxy/trust.candidate.json
+    - /var/lib/homelab-reverse-proxy/desired.json
     - /etc/systemd/system/caddy.service.d/override.conf
     - /etc/tmpfiles.d/homelab-reverse-proxy.conf
     - /run/lock/homelab-reverse-proxy.lock

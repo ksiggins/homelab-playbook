@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import importlib.util
 from pathlib import Path
 import sys
 
@@ -49,7 +51,7 @@ _UNITS = {
         "NoNewPrivileges": "yes",
         "ProtectSystem": "strict",
         "PrivateTmp": "yes",
-        "ReadWritePaths": "/var/lib/homelab-tls",
+        "ReadWritePaths": "/var/lib/homelab-tls /etc/caddy /var/lib/homelab-reverse-proxy",
         "TimeoutStartUSec": "1h",
         "ExecStart": "/usr/local/libexec/homelab-tls-reconcile",
     },
@@ -84,6 +86,63 @@ def validate_policy(value: object) -> object:
     except (TypeError, ValueError) as error:
         raise ValueError("TLS public policy does not match the approved schema") from error
     return value
+
+
+def _proxy_configuration(value: object) -> dict:
+    source = ROLE_FILES.parents[1] / "reverse_proxy/filter_plugins/proxy.py"
+    specification = importlib.util.spec_from_file_location("tls_proxy_configuration", source)
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module.validate(value)
+
+
+def proxy_policy(value: object, namespace: str, email: str, reader_gid: int) -> dict:
+    """Derive TLS targets from the same strict declaration used by the proxy."""
+    configuration = _proxy_configuration(value)
+    policy = {
+        "namespace": namespace,
+        "email": email,
+        "reader_gid": reader_gid,
+        "endpoints": [
+            {"hostname": route["hostname"], "address": address, "port": 443}
+            for route in configuration["routes"]
+            if route["certificate_name"] == "infra"
+            for address in configuration["bind_addresses"]
+        ],
+    }
+    return validate_policy(policy)
+
+
+def committed_proxy_policy(raw: str, declared: object, namespace: str,
+                           email: str, reader_gid: int) -> dict:
+    """Require the committed, ingress-bound declaration before installing policy."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate desired manifest field")
+            result[key] = value
+        return result
+
+    if not isinstance(raw, str) or len(raw.encode()) > 1024 * 1024:
+        raise ValueError("invalid committed desired manifest")
+    envelope = json.loads(raw, object_pairs_hook=unique)
+    if (not isinstance(envelope, dict) or set(envelope) != {"version", "manifest", "ingress"}
+            or type(envelope["version"]) is not int or envelope["version"] != 1
+            or not isinstance(envelope["manifest"], str)):
+        raise ValueError("invalid committed desired envelope")
+    config = _proxy_configuration(json.loads(envelope["manifest"], object_pairs_hook=unique))
+    expected_ingress = {
+        "version": 1, "manifest_sha256": hashlib.sha256(envelope["manifest"].encode()).hexdigest(),
+        "listen_addresses": config["bind_addresses"],
+        "https_client_networks": config["client_sources"],
+    }
+    ingress = envelope["ingress"]
+    if (not isinstance(ingress, dict) or type(ingress.get("version")) is not int
+            or ingress != expected_ingress or config != _proxy_configuration(declared)
+            or config.get("deferred_certificates") != ["infra"]):
+        raise ValueError("provision the declared Caddy routes and verified ingress before TLS")
+    return proxy_policy(config, namespace, email, reader_gid)
 
 
 def _keyed_records(value: object) -> dict[str, list[str] | None]:
@@ -257,6 +316,12 @@ def validate_units(value: object, allow_absent: object, array_value: object) -> 
             if key == "ExecStart":
                 if not exec_start_matches(properties.get(key), expected_value):
                     raise ValueError(f"{name} has an unexpected command")
+            elif (allow_absent and name == "homelab-tls-renew.service"
+                  and key == "ReadWritePaths"
+                  and properties.get(key) == "/var/lib/homelab-tls"):
+                # Preflight permits upgrading only the earlier canonical,
+                # narrower sandbox. Installed-unit verification stays strict.
+                continue
             elif properties.get(key) != expected_value:
                 raise ValueError(f"{name} has an unexpected {key} property")
         if name.endswith(".timer"):
@@ -272,6 +337,8 @@ class FilterModule:
     def filters(self):
         return {
             "tls_automation_validate_policy": validate_policy,
+            "tls_automation_proxy_policy": proxy_policy,
+            "tls_automation_committed_proxy_policy": committed_proxy_policy,
             "tls_automation_validate_identity": validate_identity,
             "tls_automation_validate_units": validate_units,
             "tls_automation_service_array_query": service_array_query,
