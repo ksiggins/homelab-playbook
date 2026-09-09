@@ -735,9 +735,6 @@
             reverse_proxy_molecule_external_certificates.results
             | map(attribute='stat.mode') | list | unique == ['0640']
 
-    - name: Exercise the installed TLS and Caddy integration
-      ansible.builtin.include_tasks: tasks/tls-integration.yml
-
     - name: Report rootless firewall runtime evidence boundary
       ansible.builtin.debug:
         msg: >-

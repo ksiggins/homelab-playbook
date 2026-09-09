@@ -6,6 +6,8 @@
   vars:
     reverse_proxy_molecule_fixture_root: /var/lib/reverse-proxy-molecule
   tasks:
+    # Inherit the system manager's root identity. Explicit User=root in nested
+    # Debian systemd loses the capability needed for the adapter's runuser call.
     - name: Check the disposable coordinator sandbox before provisioning
       ansible.builtin.command:
         argv:
@@ -14,7 +16,6 @@
           - --wait
           - --pipe
           - --collect
-          - --property=User=root
           - --property=Group=root
           - --property=NoNewPrivileges=yes
           - --property=ProtectSystem=strict
@@ -26,7 +27,18 @@
           - -c
           - |
             import errno
+            import os
+            from pathlib import Path
+            import subprocess
             import tempfile
+            assert os.getuid() == os.geteuid() == os.getgid() == os.getegid() == 0
+            print(next(line for line in Path('/proc/self/status').read_text().splitlines()
+                       if line.startswith('CapEff:')), flush=True)
+            identity = subprocess.run(
+                ['/usr/sbin/runuser', '-u', 'nobody', '--', '/usr/bin/id', '-u'],
+                capture_output=True, text=True, check=False)
+            assert identity.returncode == 0, identity.stderr
+            assert identity.stdout.strip() == '65534'
             try:
                 with tempfile.TemporaryFile(dir='/usr/local'):
                     pass

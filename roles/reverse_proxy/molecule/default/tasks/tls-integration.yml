@@ -65,6 +65,7 @@
     argv: [/usr/bin/python3, /usr/local/libexec/reverse-proxy-molecule-tls-integration.py, prepare]
   changed_when: false
 
+# Use the manager's root identity as verified by the early sandbox probe.
 - name: Exercise real publication with the coordinator filesystem restrictions
   ansible.builtin.command:
     argv:
@@ -73,7 +74,6 @@
       - --wait
       - --pipe
       - --collect
-      - --property=User=root
       - --property=Group=root
       - --property=NoNewPrivileges=yes
       - --property=ProtectSystem=strict

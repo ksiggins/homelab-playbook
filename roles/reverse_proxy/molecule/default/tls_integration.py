@@ -53,6 +53,7 @@ def create_material(number):
                    .not_valid_after(now + timedelta(days=2))
                    .add_extension(x509.SubjectAlternativeName([x509.DNSName("*.infra.example.com")]), False)
                    .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
+                   .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), False)
                    .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False)
                    .sign(ca_key, hashes.SHA256()))
     public = certificate.public_bytes(serialization.Encoding.PEM) + ca.public_bytes(serialization.Encoding.PEM)
@@ -181,7 +182,12 @@ def publish(runtime, policy, number, reject_after_serving=False, partial_listene
 
     with mock.patch.object(runtime, "verify_endpoints", verify):
         with runtime.publication_locked(policy) as deployment:
-            return runtime.publisher_for(policy, deployment).publish(*material(number))
+            try:
+                return runtime.publisher_for(policy, deployment).publish(*material(number))
+            except Exception as error:
+                if reject_after_serving and not rejected:
+                    raise AssertionError("activation failed before the intended served-certificate fault") from error
+                raise
 
 
 def crash_publication(runtime, policy, stage, number):
@@ -315,6 +321,8 @@ def run(runtime, policy):
 
 
 def main():
+    if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (0, 0, 0, 0):
+        raise RuntimeError("TLS integration fixture requires the system manager's root identity")
     if not Path("/run/.containerenv").exists() or not (FIXTURE / "ca.key").is_file():
         raise RuntimeError("TLS integration fixture requires its disposable Podman target")
     sys.path.insert(0, "/usr/local/lib/homelab-tls")

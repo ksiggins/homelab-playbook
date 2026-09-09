@@ -365,6 +365,12 @@ can create the nested coordinator filesystem sandbox. Without it, Debian's
 service can fail before execution, and systemd can skip filesystem restrictions
 in containers. An early disposable service verifies that `/usr/local` is
 read-only while the declared `/var/lib` write exception remains writable.
+The disposable services inherit the system manager's root identity rather than
+setting `User=root`: explicit user setup in nested Debian systemd prevents the
+adapter from switching to the Caddy user. The early probe verifies effective
+root identity and a successful unprivileged user switch, and the integrated
+driver independently checks its root identity. The remaining sandbox settings
+stay in place; production units retain their explicit service identities.
 These capabilities belong to the rootless test container; the
 managed Caddy service still receives only `CAP_NET_BIND_SERVICE`, and the
 production coordinator restrictions remain unchanged.
