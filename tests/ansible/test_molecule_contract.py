@@ -566,6 +566,17 @@ class MoleculeScenarioContractTests(unittest.TestCase):
         )
         self.assertEqual("UTC", variables["host_identity_timezone"])
         self.assertEqual(["10.0.0.0/8"], variables["security_baseline_management_sources"])
+        proxy_task = next(
+            task
+            for play in documents[0]
+            for task in play.get("tasks", [])
+            if task.get("ansible.builtin.include_role", {}).get("name") == "reverse_proxy"
+        )
+        self.assertEqual(
+            variables["security_baseline_management_sources"],
+            proxy_task.get("vars", {}).get("security_baseline_management_sources"),
+            "OS and Caddy plays must reconcile the same synthetic management network",
+        )
         self.assertEqual(
             "/usr/bin/stat -c %y /proc/1",
             variables["os_reboot_boot_time_command"],

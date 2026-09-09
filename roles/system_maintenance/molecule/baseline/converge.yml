@@ -124,6 +124,8 @@
       ansible.builtin.include_role:
         name: reverse_proxy
       vars:
+        security_baseline_management_sources:
+          - 10.0.0.0/8
         security_baseline_apply_firewall_runtime: false
         os_baseline_verify_runtime_controls: false
 
