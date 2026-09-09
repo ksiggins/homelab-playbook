@@ -356,8 +356,14 @@ Register any required container scenario in local and GitHub CI dispatch togethe
 Do not weaken host restrictions to accommodate nested container limitations.
 
 The rootless proxy test containers add `SYS_PTRACE` so their administrator can
-observe Caddy-owned sockets with `ss -p`. This capability belongs to the test
-container; the managed Caddy service still receives only `CAP_NET_BIND_SERVICE`.
+observe Caddy-owned sockets with `ss -p`. They also add `SYS_ADMIN` so systemd
+can create the nested coordinator filesystem sandbox. Without it, Debian's
+service can fail before execution, and systemd can skip filesystem restrictions
+in containers. An early disposable service verifies that `/usr/local` is
+read-only while the declared `/var/lib` write exception remains writable.
+These capabilities belong to the rootless test container; the
+managed Caddy service still receives only `CAP_NET_BIND_SERVICE`, and the
+production coordinator restrictions remain unchanged.
 Container checks establish permanent firewall configuration, not host-kernel
 firewall enforcement or enforcing SELinux behavior.
 

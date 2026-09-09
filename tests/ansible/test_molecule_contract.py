@@ -176,7 +176,8 @@ class MoleculeScenarioContractTests(unittest.TestCase):
                 self.assertEqual(image, platform["image"])
                 self.assertEqual(container_name, platform["container_name"])
                 self.assertEqual(["reverse_proxy_hosts"], platform["groups"])
-                self.assertEqual(["SYS_PTRACE"], platform["container_cap_add"])
+                expected_capabilities = ["SYS_PTRACE", "SYS_ADMIN"]
+                self.assertEqual(expected_capabilities, platform["container_cap_add"])
                 self.assertIs(platform["container_privileged"], False)
                 self.assertEqual("always", platform["container_systemd"])
                 self.assertEqual("never", platform["pull"])

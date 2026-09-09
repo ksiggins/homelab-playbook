@@ -6,6 +6,60 @@
   vars:
     reverse_proxy_molecule_fixture_root: /var/lib/reverse-proxy-molecule
   tasks:
+    - name: Check the disposable coordinator sandbox before provisioning
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/systemd-run
+          - --unit=reverse-proxy-molecule-sandbox-probe
+          - --wait
+          - --pipe
+          - --collect
+          - --property=User=root
+          - --property=Group=root
+          - --property=NoNewPrivileges=yes
+          - --property=ProtectSystem=strict
+          - --property=ProtectHome=yes
+          - --property=PrivateTmp=yes
+          - --property=PrivateDevices=yes
+          - --property=ReadWritePaths=/var/lib
+          - /usr/bin/python3
+          - -c
+          - |
+            import errno
+            import tempfile
+            try:
+                with tempfile.TemporaryFile(dir='/usr/local'):
+                    pass
+            except OSError as error:
+                if error.errno != errno.EROFS:
+                    raise
+            else:
+                raise SystemExit('ProtectSystem=strict did not make /usr/local read-only')
+            with tempfile.TemporaryFile(dir='/var/lib'):
+                pass
+      register: reverse_proxy_molecule_sandbox_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Read bounded sandbox startup diagnostics
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/journalctl
+          - --unit=reverse-proxy-molecule-sandbox-probe.service
+          - --lines=20
+          - --no-pager
+          - --output=cat
+      register: reverse_proxy_molecule_sandbox_diagnostic
+      changed_when: false
+      when: reverse_proxy_molecule_sandbox_probe.rc != 0
+
+    - name: Require the disposable coordinator sandbox to start
+      ansible.builtin.assert:
+        that: reverse_proxy_molecule_sandbox_probe.rc == 0
+        fail_msg: >-
+          Sandbox startup failed: {{ reverse_proxy_molecule_sandbox_probe.stderr }}.
+          {{ reverse_proxy_molecule_sandbox_diagnostic.stdout | default('') }}
+
     - name: Discover the rootless container private address
       ansible.builtin.command:
         argv:
