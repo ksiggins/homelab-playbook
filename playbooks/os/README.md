@@ -23,6 +23,9 @@ Debian 13 and Rocky Linux 9 are the supported complete-baseline platforms.
 Complete-baseline operations reject unsupported platforms before mutation.
 The baseline preserves each distribution's official repository configuration
 and existing time sources.
+On Rocky hosts owned by the Caddy role, it also accepts that role's signed
+EPEL 9 package source. The exact Caddy ownership marker is required; the OS
+baseline does not enable EPEL on other hosts.
 
 ## Playbook surface
 

@@ -359,11 +359,12 @@
         that:
           - system_maintenance_molecule_baseline_updater_problems | length == 0
 
-    - name: Verify the minimum package set and excluded ownership
+    - name: Verify baseline packages and the Caddy package source
       ansible.builtin.assert:
         that:
           - system_maintenance_molecule_baseline_minimum_packages[ansible_facts['os_family']] | difference(ansible_facts.packages.keys()) | length == 0
-          - "'epel-release' not in ansible_facts.packages"
+          - "'caddy' in ansible_facts.packages"
+          - "('epel-release' in ansible_facts.packages) == (ansible_facts['os_family'] == 'RedHat')"
           - "'fail2ban' not in ansible_facts.packages"
 
     - name: Inspect recurring full update timer and cron artifacts

@@ -215,6 +215,15 @@ and DNF repository GPG checks. It does not import third-party signing keys or
 enable EPEL by default. Later roles must own and justify any additional
 repository.
 
+The managed Caddy role is the approved Rocky exception. Maintenance accepts
+the standard `epel` and `epel-cisco-openh264` repositories only when the existing
+`/var/lib/homelab-reverse-proxy/managed` ownership marker is a regular `root:root`
+`0600` file with one link and the exact managed content. These repositories must
+use the local `RPM-GPG-KEY-EPEL-9` key; Rocky repositories must still use their
+Rocky 9 key. Global and per-repository signature checks remain mandatory.
+An absent or invalid ownership marker does not authorize EPEL, and enabled
+testing, debug, source, next, or other repository IDs are not accepted.
+
 Debian sources select the package-owned Debian archive keyring explicitly.
 Before trust validation, provisioning adds that restriction to official Debian
 repositories in legacy one-line source files that omit `Signed-By`. It

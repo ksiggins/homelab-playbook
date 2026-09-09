@@ -52,6 +52,10 @@ benefit for this service that outweighs the additional mechanisms.
 Install the unpinned `caddy` distribution package without DNS-provider plugins.
 Use Debian 13's native APT repository. Rocky Linux 9 uses its compatible EPEL
 package, with the signed EPEL repository explicitly established by the role.
+The OS maintenance trust check recognizes the standard `epel` and
+`epel-cisco-openh264` repositories only when the exact root-owned Caddy ownership
+marker is present, and requires their EPEL 9 signing key. This keeps repeat
+provisioning and maintenance compatible with the installed Caddy package source.
 The demonstrated need for EPEL is the Caddy package; no upstream Caddy repository
 or standalone binary installer is introduced. Installation uses `state: present`;
 existing OS maintenance owns package upgrades. Daily security updates retain
