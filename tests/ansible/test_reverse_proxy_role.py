@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import importlib.util
 import io
 import os
 import subprocess
@@ -36,6 +37,13 @@ class CaddyfileRenderingTests(unittest.TestCase):
             keep_trailing_newline=True,
             trim_blocks=True,
         )
+        plugin_path = ROLE_ROOT / "filter_plugins" / "proxy.py"
+        spec = importlib.util.spec_from_file_location(
+            "reverse_proxy_template_filter", plugin_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.environment.filters.update(module.FilterModule().filters())
 
     def render(self, config: dict[str, object]) -> str:
         return self.environment.get_template("Caddyfile.j2").render(
