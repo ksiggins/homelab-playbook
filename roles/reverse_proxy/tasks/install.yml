@@ -1,0 +1,162 @@
+---
+- name: Reject unsafe filesystem state before package installation
+  ansible.builtin.import_tasks: filesystem-preflight.yml
+
+- name: Read installed packages before reverse proxy takeover
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Read service state before reverse proxy takeover
+  ansible.builtin.service_facts:
+
+- name: Inspect reverse proxy ownership markers and unmanaged binaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    checksum_algorithm: sha256
+  loop:
+    - /var/lib/homelab-reverse-proxy/managed
+    - /usr/bin/caddy
+    - /usr/local/bin/caddy
+    - /usr/local/sbin/caddy
+    - /etc/systemd/system/caddy.service
+  register: reverse_proxy_takeover_boundaries
+
+- name: Reject unmanaged reverse proxy installation
+  ansible.builtin.assert:
+    that:
+      - >-
+        not reverse_proxy_takeover_boundaries.results[2].stat.exists
+        and not reverse_proxy_takeover_boundaries.results[3].stat.exists
+        and not reverse_proxy_takeover_boundaries.results[4].stat.exists
+      - >-
+        'caddy' not in ansible_facts['packages']
+        or (reverse_proxy_takeover_boundaries.results[0].stat.exists
+            and reverse_proxy_takeover_boundaries.results[0].stat.isreg
+            and reverse_proxy_takeover_boundaries.results[0].stat.uid == 0
+            and reverse_proxy_takeover_boundaries.results[0].stat.gid == 0
+            and reverse_proxy_takeover_boundaries.results[0].stat.mode == '0600'
+            and reverse_proxy_takeover_boundaries.results[0].stat.nlink == 1
+            and reverse_proxy_takeover_boundaries.results[0].stat.checksum
+                == ('managed by homelab-playbook\n' | hash('sha256')))
+      - >-
+        'caddy' in ansible_facts['packages']
+        or not reverse_proxy_takeover_boundaries.results[1].stat.exists
+      - >-
+        'caddy' in ansible_facts['packages']
+        or ansible_facts.services.get('caddy.service', {}).get('state', 'stopped') != 'running'
+    fail_msg: >-
+      An existing Caddy installation is outside the repository ownership
+      contract; operator reconciliation is required
+
+- name: Install Debian reverse proxy runtime dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - iproute2
+      - openssl
+      - passwd
+      - util-linux
+    state: present
+  when: ansible_facts['distribution'] == 'Debian'
+
+- name: Install Debian distribution Caddy without starting package defaults
+  ansible.builtin.apt:
+    name: caddy
+    state: present
+    policy_rc_d: 101
+  when: ansible_facts['distribution'] == 'Debian'
+
+- name: Install signed EPEL repository on Rocky Linux
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+  when: ansible_facts['distribution'] == 'Rocky'
+
+- name: Install Rocky reverse proxy runtime dependencies
+  ansible.builtin.dnf:
+    name:
+      - ca-certificates
+      - iproute
+      - openssl
+      - shadow-utils
+      - util-linux
+    state: present
+  when: ansible_facts['distribution'] == 'Rocky'
+
+- name: Install Rocky Linux distribution Caddy
+  ansible.builtin.dnf:
+    name: caddy
+    state: present
+  when: ansible_facts['distribution'] == 'Rocky'
+
+- name: Read package-created Caddy account
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, passwd, caddy]
+  register: reverse_proxy_passwd
+  changed_when: false
+  no_log: true
+
+- name: Read package-created Caddy group
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group, caddy]
+  register: reverse_proxy_group
+  changed_when: false
+  no_log: true
+
+- name: Read package-created Caddy group memberships
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -Gn, caddy]
+  register: reverse_proxy_identity_groups
+  changed_when: false
+  no_log: true
+
+- name: Read all effective host accounts
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, passwd]
+  register: reverse_proxy_all_passwd
+  changed_when: false
+  no_log: true
+
+- name: Verify compatible package-created Caddy identity
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_passwd.stdout.split(':') | length == 7
+      - reverse_proxy_group.stdout.split(':') | length == 4
+      - reverse_proxy_passwd.stdout.split(':')[0] == 'caddy'
+      - reverse_proxy_passwd.stdout.split(':')[2] | int > 0
+      - >-
+        reverse_proxy_passwd.stdout.split(':')[3]
+        == reverse_proxy_group.stdout.split(':')[2]
+      - >-
+        reverse_proxy_all_passwd.stdout_lines
+        | select(
+            'match',
+            '^[^:]+:[^:]*:[^:]+:'
+            ~ (reverse_proxy_group.stdout.split(':')[2] | regex_escape)
+            ~ ':'
+          )
+        | list
+        | length == 1
+      - reverse_proxy_group.stdout.split(':')[3] in ['', 'caddy']
+      - reverse_proxy_passwd.stdout.split(':')[5] == '/var/lib/caddy'
+      - >-
+        reverse_proxy_passwd.stdout.split(':')[6]
+        in ['/usr/sbin/nologin', '/sbin/nologin', '/bin/false']
+      - "'caddy' in reverse_proxy_identity_groups.stdout.split()"
+      - >-
+        reverse_proxy_identity_groups.stdout.split()
+        | difference(['caddy', 'www-data']
+                     if ansible_facts['distribution'] == 'Debian'
+                     else ['caddy'])
+        | length == 0
+    fail_msg: >-
+      The package-created Caddy account is incompatible with the dedicated
+      service identity contract
+  no_log: true
+
+- name: Record installed Caddy capability
+  ansible.builtin.command:
+    argv: [/usr/bin/caddy, version]
+  register: reverse_proxy_installed_version
+  changed_when: false

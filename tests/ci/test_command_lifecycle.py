@@ -89,6 +89,15 @@ class CommandLifecycleTests(unittest.TestCase):
             molecule_task["run"],
         )
 
+        ci_task = next(task for task in tasks if task["name"] == "ci")
+        ci_commands = "\n".join(ci_task["run"])
+        self.assertEqual(
+            1,
+            ci_commands.count(
+                "mise run test:molecule -- reverse_proxy/default"
+            ),
+        )
+
     def test_github_protection_tasks_publish_distinct_lifecycle_commands(
         self,
     ) -> None:

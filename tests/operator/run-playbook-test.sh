@@ -136,6 +136,14 @@ printf '%s\n' \
   --- >"$test_root/expected-uv.log"
 assert_file_equals "$test_root/expected-uv.log" "$uv_log"
 
+for proxy_action in provision verify; do
+  : >"$uv_log"
+  assert_status 0 env PATH="$fake_bin:$PATH" FAKE_UV_LOG="$uv_log" \
+    "$repo_root/scripts/playbook.sh" reverse-proxy "$proxy_action" production --check
+  rg -q '^ansible-config$' "$uv_log" || fail 'proxy action omitted credential guards'
+  rg -q '^ansible-playbook$' "$uv_log" || fail 'proxy action did not reach playbook gateway'
+done
+
 for unsafe_args in \
   '-k' \
   '--ask-pass' \
@@ -152,7 +160,8 @@ for unsafe_args in \
   : >"$uv_log"
   read -r -a unsafe_argv <<<"$unsafe_args"
   for guarded_selector in 'os maintain' 'os verify' 'podman provision' 'podman verify' \
-    'tls provision' 'tls renew' 'tls verify'; do
+    'tls provision' 'tls renew' 'tls verify' \
+    'reverse-proxy provision' 'reverse-proxy verify'; do
     read -r -a guarded_argv <<<"$guarded_selector"
     assert_status 2 env \
     PATH="$fake_bin:$PATH" \

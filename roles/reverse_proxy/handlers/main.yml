@@ -1,0 +1,9 @@
+---
+- name: Reload systemd manager for reverse proxy
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart reverse proxy for systemd policy change
+  ansible.builtin.systemd_service:
+    name: caddy.service
+    state: restarted

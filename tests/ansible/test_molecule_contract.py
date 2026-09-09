@@ -14,6 +14,9 @@ SCENARIO_DIRECTORY = (
 BASELINE_SCENARIO_DIRECTORY = (
     REPOSITORY_ROOT / "roles" / "system_maintenance" / "molecule" / "baseline"
 )
+REVERSE_PROXY_SCENARIO_DIRECTORY = (
+    REPOSITORY_ROOT / "roles" / "reverse_proxy" / "molecule" / "default"
+)
 
 
 def load_yaml(name: str):
@@ -34,6 +37,13 @@ def load_baseline_yaml(name: str):
     path = BASELINE_SCENARIO_DIRECTORY / name
     if not path.is_file():
         raise AssertionError(f"required baseline scenario file is missing: {path}")
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def load_reverse_proxy_yaml(name: str):
+    path = REVERSE_PROXY_SCENARIO_DIRECTORY / name
+    if not path.is_file():
+        raise AssertionError(f"required reverse proxy scenario file is missing: {path}")
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
@@ -97,6 +107,84 @@ def containerfile_installed_packages(content: str) -> list[str]:
 
 
 class MoleculeScenarioContractTests(unittest.TestCase):
+    def test_reverse_proxy_scenario_registers_disposable_platforms(self) -> None:
+        required = {
+            "molecule.yml",
+            "create.yml",
+            "prepare.yml",
+            "converge.yml",
+            "verify.yml",
+            "cleanup.yml",
+            "destroy.yml",
+            "Containerfile.debian13",
+            "Containerfile.rockylinux9",
+            "backend.py",
+            "diagnose.py",
+            "probe.py",
+            "rotation.py",
+        }
+        self.assertEqual(
+            required,
+            {
+                path.name
+                for path in REVERSE_PROXY_SCENARIO_DIRECTORY.iterdir()
+                if path.is_file()
+            },
+        )
+        self.assertEqual(
+            {"certificate_failure.yml", "unexpected_failure.yml"},
+            {
+                path.name
+                for path in (REVERSE_PROXY_SCENARIO_DIRECTORY / "tasks").iterdir()
+                if path.is_file()
+            },
+        )
+
+        configuration = load_reverse_proxy_yaml("molecule.yml")
+        self.assertEqual(
+            [
+                "destroy",
+                "syntax",
+                "create",
+                "prepare",
+                "converge",
+                "idempotence",
+                "verify",
+                "cleanup",
+                "destroy",
+            ],
+            configuration["scenario"]["test_sequence"],
+        )
+        expected = {
+            "debian13": (
+                "localhost/homelab-playbook-reverse-proxy-debian13:local",
+                "homelab-playbook-reverse-proxy-debian13",
+            ),
+            "rockylinux9": (
+                "localhost/homelab-playbook-reverse-proxy-rockylinux9:local",
+                "homelab-playbook-reverse-proxy-rockylinux9",
+            ),
+        }
+        platforms = {
+            platform["name"]: platform for platform in configuration["platforms"]
+        }
+        self.assertEqual(set(expected), set(platforms))
+        for name, (image, container_name) in expected.items():
+            with self.subTest(platform=name):
+                platform = platforms[name]
+                self.assertEqual(image, platform["image"])
+                self.assertEqual(container_name, platform["container_name"])
+                self.assertEqual(["reverse_proxy_hosts"], platform["groups"])
+                self.assertEqual(["SYS_PTRACE"], platform["container_cap_add"])
+                self.assertIs(platform["container_privileged"], False)
+                self.assertEqual("always", platform["container_systemd"])
+                self.assertEqual("never", platform["pull"])
+                self.assertTrue(
+                    {"cap_add", "capabilities", "devices", "volumes"}.isdisjoint(
+                        platform
+                    )
+                )
+
     def test_scenario_uses_the_ansible_native_lifecycle_and_least_privilege(
         self,
     ) -> None:
@@ -201,6 +289,10 @@ class MoleculeScenarioContractTests(unittest.TestCase):
         self.assertEqual(
             "{{ system_maintenance_molecule_platform.hostname | default(omit) }}",
             start.get("hostname"),
+        )
+        self.assertEqual(
+            "{{ system_maintenance_molecule_platform.container_cap_add | default(omit) }}",
+            start.get("cap_add"),
         )
 
     def test_controller_playbooks_select_the_worker_platform_from_environment(
@@ -788,7 +880,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             assertion["ansible.builtin.assert"]["that"],
         )
 
-    def test_ci_registers_exact_four_selector_platform_jobs(self) -> None:
+    def test_ci_registers_exact_six_selector_platform_jobs(self) -> None:
         workflow = yaml.safe_load(
             (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
                 encoding="utf-8"
@@ -803,6 +895,8 @@ class MoleculeScenarioContractTests(unittest.TestCase):
                 {"selector": "system_maintenance/default", "platform": "rockylinux9"},
                 {"selector": "system_maintenance/baseline", "platform": "debian13"},
                 {"selector": "system_maintenance/baseline", "platform": "rockylinux9"},
+                {"selector": "reverse_proxy/default", "platform": "debian13"},
+                {"selector": "reverse_proxy/default", "platform": "rockylinux9"},
             ],
             matrix["include"],
         )

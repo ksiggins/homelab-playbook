@@ -1,0 +1,266 @@
+---
+- name: Validate reverse proxy verification inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Read installed reverse proxy package metadata
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Verify distribution Caddy package is installed
+  ansible.builtin.assert:
+    that:
+      - "'caddy' in ansible_facts['packages']"
+      - ansible_facts['packages'].caddy | length > 0
+    fail_msg: The distribution Caddy package is not installed
+
+- name: Read effective Caddy account
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, passwd, caddy]
+  register: reverse_proxy_verify_passwd
+  changed_when: false
+  no_log: true
+
+- name: Read effective Caddy group
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group, caddy]
+  register: reverse_proxy_verify_group
+  changed_when: false
+  no_log: true
+
+- name: Read effective Caddy group memberships
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -Gn, caddy]
+  register: reverse_proxy_verify_groups
+  changed_when: false
+  no_log: true
+
+- name: Read Caddy sudo authorization
+  ansible.builtin.command:
+    argv: [/usr/bin/sudo, -n, -l, -U, caddy]
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: reverse_proxy_verify_sudo
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Verify dedicated Caddy identity
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_verify_passwd.stdout.split(':') | length == 7
+      - reverse_proxy_verify_group.stdout.split(':') | length == 4
+      - reverse_proxy_verify_passwd.stdout.split(':')[0] == 'caddy'
+      - reverse_proxy_verify_passwd.stdout.split(':')[2] | int > 0
+      - >-
+        reverse_proxy_verify_passwd.stdout.split(':')[3]
+        == reverse_proxy_verify_group.stdout.split(':')[2]
+      - reverse_proxy_verify_passwd.stdout.split(':')[5] == '/var/lib/caddy'
+      - >-
+        reverse_proxy_verify_passwd.stdout.split(':')[6]
+        in ['/usr/sbin/nologin', '/sbin/nologin', '/bin/false']
+      - reverse_proxy_verify_groups.stdout.split() == ['caddy']
+      - >-
+        ('User caddy is not allowed to run sudo on '
+         in reverse_proxy_verify_sudo.stdout)
+        or ('User caddy is not allowed to run sudo on '
+            in reverse_proxy_verify_sudo.stderr)
+    fail_msg: The Caddy account does not match the private service identity
+  no_log: true
+
+- name: Inspect reverse proxy managed paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+    checksum_algorithm: sha256
+  loop:
+    - {path: /etc/caddy, kind: directory, owner: root, group: caddy, mode: '0750'}
+    - {path: /etc/caddy/tls, kind: directory, owner: root, group: caddy, mode: '0750'}
+    - {path: /etc/caddy/Caddyfile, kind: file, owner: root, group: caddy, mode: '0640'}
+    - {path: /etc/caddy/Caddyfile.candidate, kind: file, owner: root, group: caddy, mode: '0640'}
+    - {path: /var/lib/caddy, kind: directory, owner: caddy, group: caddy, mode: '0700'}
+    - {path: /var/lib/homelab-reverse-proxy, kind: directory, owner: root, group: root, mode: '0700'}
+    - {path: /var/lib/homelab-reverse-proxy/managed, kind: file, owner: root, group: root, mode: '0600'}
+    - {path: /usr/local/libexec/homelab-reverse-proxy, kind: file, owner: root, group: root, mode: '0755'}
+    - {path: /etc/systemd/system/caddy.service.d/override.conf, kind: file, owner: root, group: root, mode: '0644'}
+    - {path: /etc/tmpfiles.d/homelab-reverse-proxy.conf, kind: file, owner: root, group: root, mode: '0644'}
+    - {path: /run/lock/homelab-reverse-proxy.lock, kind: file, owner: root, group: root, mode: '0600'}
+    - {path: /run/caddy, kind: directory, owner: caddy, group: caddy, mode: '0700'}
+    - {path: /run/caddy/admin.sock, kind: socket, owner: caddy, group: caddy, mode: private}
+  register: reverse_proxy_verify_paths
+
+- name: Verify reverse proxy managed path boundaries
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - not item.stat.islnk
+      - item.stat.pw_name == item.item.owner
+      - item.stat.gr_name == item.item.group
+      - >-
+        (item.item.kind == 'directory' and item.stat.isdir)
+        or (item.item.kind == 'file' and item.stat.isreg)
+        or (item.item.kind == 'socket' and item.stat.issock)
+      - >-
+        (item.item.mode == 'private' and item.stat.mode[-2:] == '00')
+        or item.stat.mode == item.item.mode
+      - item.item.kind != 'file' or item.stat.nlink == 1
+    fail_msg: A reverse proxy managed path is missing or has drifted
+  loop: "{{ reverse_proxy_verify_paths.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Verify committed configuration matches declared routes
+  ansible.builtin.assert:
+    that:
+      - >-
+        reverse_proxy_verify_paths.results[2].stat.checksum
+        == (lookup(
+              'ansible.builtin.template',
+              'Caddyfile.j2'
+            ) | hash('sha256'))
+    fail_msg: >-
+      The committed Caddy configuration does not match the declared reverse
+      proxy routes
+  no_log: true
+
+- name: Read installed Caddy version
+  ansible.builtin.command:
+    argv: [/usr/bin/caddy, version]
+  register: reverse_proxy_verify_version
+  changed_when: false
+
+- name: Read reverse proxy service activity
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, --quiet, caddy.service]
+  changed_when: false
+
+- name: Read reverse proxy service enablement
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-enabled, --quiet, caddy.service]
+  changed_when: false
+
+- name: Read effective reverse proxy systemd properties
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - show
+      - caddy.service
+      - --property=User
+      - --property=Group
+      - --property=SupplementaryGroups
+      - --property=AmbientCapabilities
+      - --property=CapabilityBoundingSet
+      - --property=NoNewPrivileges
+      - --property=PrivateTmp
+      - --property=ProtectHome
+      - --property=ProtectSystem
+      - --property=UMask
+      - --property=ReadWritePaths
+      - --property=ExecStartPre
+      - --property=ExecReload
+  register: reverse_proxy_verify_unit
+  changed_when: false
+
+- name: Verify effective reverse proxy systemd restrictions
+  ansible.builtin.assert:
+    that:
+      - "'User=caddy' in reverse_proxy_verify_unit.stdout_lines"
+      - "'Group=caddy' in reverse_proxy_verify_unit.stdout_lines"
+      - >-
+        'SupplementaryGroups=' in reverse_proxy_verify_unit.stdout_lines
+      - >-
+        'AmbientCapabilities=cap_net_bind_service'
+        in reverse_proxy_verify_unit.stdout_lines
+      - >-
+        'CapabilityBoundingSet=cap_net_bind_service'
+        in reverse_proxy_verify_unit.stdout_lines
+      - "'NoNewPrivileges=yes' in reverse_proxy_verify_unit.stdout_lines"
+      - "'PrivateTmp=yes' in reverse_proxy_verify_unit.stdout_lines"
+      - "'ProtectHome=yes' in reverse_proxy_verify_unit.stdout_lines"
+      - "'ProtectSystem=strict' in reverse_proxy_verify_unit.stdout_lines"
+      - "'UMask=0077' in reverse_proxy_verify_unit.stdout_lines"
+      - >-
+        'ReadWritePaths=/var/lib/caddy /run/caddy'
+        in reverse_proxy_verify_unit.stdout_lines
+      - >-
+        reverse_proxy_verify_unit.stdout
+        is search('ExecStartPre=.*?/usr/sbin/usermod --groups= caddy')
+      - >-
+        reverse_proxy_verify_unit.stdout
+        is search('ExecStartPre=.*?/usr/local/libexec/homelab-reverse-proxy recover')
+      - >-
+        reverse_proxy_verify_unit.stdout
+        is search('ExecReload=.*?/usr/local/libexec/homelab-reverse-proxy reload')
+    fail_msg: Effective caddy.service restrictions do not match repository policy
+
+- name: Read reverse proxy service process identity
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - show
+      - --property=MainPID
+      - --value
+      - caddy.service
+  register: reverse_proxy_verify_pid
+  changed_when: false
+
+- name: Verify reverse proxy service process exists
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_verify_pid.stdout | trim is match('^[1-9][0-9]*$')
+    fail_msg: The running Caddy process identity could not be resolved
+
+- name: Read running Caddy process credentials
+  ansible.builtin.slurp:
+    src: "/proc/{{ reverse_proxy_verify_pid.stdout | trim }}/status"
+  register: reverse_proxy_verify_process_status
+  no_log: true
+
+- name: Verify running Caddy process identity
+  vars:
+    reverse_proxy_verify_uid: "{{ reverse_proxy_verify_passwd.stdout.split(':')[2] }}"
+    reverse_proxy_verify_gid: "{{ reverse_proxy_verify_passwd.stdout.split(':')[3] }}"
+    reverse_proxy_verify_status: >-
+      {{ reverse_proxy_verify_process_status.content | b64decode }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        reverse_proxy_verify_status
+        is regex(
+          '(?m)^Uid:\\s+' ~ reverse_proxy_verify_uid
+          ~ '\\s+' ~ reverse_proxy_verify_uid
+          ~ '\\s+' ~ reverse_proxy_verify_uid
+          ~ '\\s+' ~ reverse_proxy_verify_uid ~ '\\s*$'
+        )
+      - >-
+        reverse_proxy_verify_status
+        is regex(
+          '(?m)^Gid:\\s+' ~ reverse_proxy_verify_gid
+          ~ '\\s+' ~ reverse_proxy_verify_gid
+          ~ '\\s+' ~ reverse_proxy_verify_gid
+          ~ '\\s+' ~ reverse_proxy_verify_gid ~ '\\s*$'
+        )
+      - >-
+        reverse_proxy_verify_status
+        is regex(
+          '(?m)^Groups:\\s*(?:' ~ reverse_proxy_verify_gid ~ '\\s*)?$'
+        )
+    fail_msg: The running Caddy process has unexpected credentials or groups
+  no_log: true
+
+- name: Verify active reverse proxy configuration
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/homelab-reverse-proxy, verify]
+  changed_when: false
+  no_log: true
+
+- name: Verify reverse proxy firewall policy
+  ansible.builtin.include_role:
+    name: os_baseline_verify
+    tasks_from: firewall.yml
+    public: false
+  vars:
+    os_baseline_verify_expected_management_sources: >-
+      {{ reverse_proxy_expected_management_sources }}
+    os_baseline_verify_expected_firewall_services: >-
+      {{ reverse_proxy_expected_firewall_services }}

@@ -1,0 +1,15 @@
+{
+	admin unix//run/caddy/admin.sock
+	auto_https off
+	servers {
+		protocols h1 h2
+	}
+}
+{% for route in reverse_proxy_config.routes %}
+
+https://{{ route.hostname }}:443 {
+	bind {{ reverse_proxy_config.bind_addresses | join(' ') }}
+	tls /etc/caddy/tls/{{ route.certificate_name }}/current/fullchain.pem /etc/caddy/tls/{{ route.certificate_name }}/current/privkey.pem
+	reverse_proxy 127.0.0.1:{{ route.backend_port }}
+}
+{% endfor %}

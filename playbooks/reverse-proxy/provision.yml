@@ -1,0 +1,35 @@
+---
+- name: Provision the shared private reverse proxy
+  hosts: reverse_proxy_hosts
+  serial: 1
+  any_errors_fatal: true
+  gather_facts: false
+  become: false
+  pre_tasks:
+    - name: Reject password-based reverse proxy credentials
+      ansible.builtin.assert:
+        that:
+          - ansible_password is not defined
+          - ansible_ssh_pass is not defined
+          - ansible_ssh_password is not defined
+          - ansible_become_password is not defined
+          - ansible_become_pass is not defined
+        fail_msg: >-
+          reverse proxy operations require key-only SSH and passwordless sudo for the
+          ansible account
+      no_log: true
+
+    - name: Prove fresh administrative connection prerequisites
+      ansible.builtin.import_role:
+        name: os_bootstrap
+        tasks_from: connection-preflight.yml
+
+    - name: Gather privileged host facts
+      ansible.builtin.setup:
+      become: true
+
+  tasks:
+    - name: Reconcile and verify the shared private reverse proxy
+      ansible.builtin.import_role:
+        name: reverse_proxy
+      become: true

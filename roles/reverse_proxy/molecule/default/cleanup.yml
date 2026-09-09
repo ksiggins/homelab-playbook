@@ -1,0 +1,50 @@
+---
+- name: Remove disposable reverse proxy fixtures
+  hosts: reverse_proxy_hosts
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Stop the disposable backend
+      ansible.builtin.systemd_service:
+        name: reverse-proxy-molecule-backend.service
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Remove disposable unit and protocol programs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/reverse-proxy-molecule-backend.service
+        - /usr/local/libexec/reverse-proxy-molecule-backend.py
+        - /usr/local/libexec/reverse-proxy-molecule-diagnose.py
+        - /usr/local/libexec/reverse-proxy-molecule-probe.py
+        - /usr/local/libexec/reverse-proxy-molecule-rotation.py
+
+    - name: Remove disposable certificate data and trust anchors
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/caddy/tls/fixture
+        - /var/lib/reverse-proxy-molecule
+        - /usr/local/share/ca-certificates/reverse-proxy-molecule.crt
+        - /etc/pki/ca-trust/source/anchors/reverse-proxy-molecule.pem
+
+    - name: Remove disposable WebSocket signals
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/ws-invalid-ready
+        - /tmp/ws-invalid-continue
+        - /tmp/ws-reload-ready
+        - /tmp/ws-reload-continue
+
+    - name: Reload systemd after fixture cleanup
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+- name: Reuse the registered Podman cleanup lifecycle
+  ansible.builtin.import_playbook: ../../../system_maintenance/molecule/default/cleanup.yml

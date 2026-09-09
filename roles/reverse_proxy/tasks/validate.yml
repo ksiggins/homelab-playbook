@@ -1,0 +1,34 @@
+---
+- name: Require supported reverse proxy host authority
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian'
+         and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Rocky'
+            and ansible_facts['distribution_major_version'] == '9')
+      - ansible_facts['service_mgr'] == 'systemd'
+      - ansible_user | default('') == 'ansible'
+      - ansible_password is not defined
+      - ansible_ssh_pass is not defined
+      - ansible_ssh_password is not defined
+      - ansible_become_password is not defined
+      - ansible_become_pass is not defined
+    fail_msg: >-
+      Reverse proxy management requires a supported OS baseline and key-only
+      ansible administration
+  no_log: true
+
+- name: Canonicalize reverse proxy configuration
+  ansible.builtin.set_fact:
+    reverse_proxy_config: >-
+      {{ {
+           'bind_addresses': reverse_proxy_bind_addresses,
+           'client_sources': reverse_proxy_client_sources,
+           'routes': reverse_proxy_routes
+         } | reverse_proxy_validate }}
+    reverse_proxy_expected_management_sources: >-
+      {{ security_baseline_management_sources | default([]) }}
+    reverse_proxy_expected_firewall_services: >-
+      {{ security_baseline_firewall_services | default([]) }}
+  no_log: true

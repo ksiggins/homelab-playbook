@@ -74,6 +74,8 @@
         state: started
         detach: true
         privileged: "{{ system_maintenance_molecule_platform.container_privileged }}"
+        cap_add: >-
+          {{ system_maintenance_molecule_platform.container_cap_add | default(omit) }}
         systemd: "{{ system_maintenance_molecule_platform.container_systemd }}"
         pull: "{{ system_maintenance_molecule_platform.pull }}"
         restart_policy: >-

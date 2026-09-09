@@ -135,6 +135,7 @@ class RunnerCliTests(unittest.TestCase):
             {
                 "system_maintenance/default",
                 "system_maintenance/baseline",
+                "reverse_proxy/default",
             },
             set(scenarios),
         )
@@ -180,6 +181,29 @@ class RunnerCliTests(unittest.TestCase):
                         "docker.io/rockylinux/rockylinux:9",
                         "localhost/homelab-playbook-system-maintenance-baseline-rockylinux9:local",
                         "homelab-playbook-system-maintenance-baseline-rockylinux9",
+                        "/usr/lib/systemd/systemd",
+                        "Containerfile.rockylinux9",
+                    ),
+                ],
+            },
+            "reverse_proxy/default": {
+                "role_name": "reverse_proxy",
+                "scenario_name": "default",
+                "groups": ["reverse_proxy_hosts"],
+                "platforms": [
+                    (
+                        "debian13",
+                        "docker.io/library/debian:13",
+                        "localhost/homelab-playbook-reverse-proxy-debian13:local",
+                        "homelab-playbook-reverse-proxy-debian13",
+                        "/usr/lib/systemd/systemd",
+                        "Containerfile.debian13",
+                    ),
+                    (
+                        "rockylinux9",
+                        "docker.io/rockylinux/rockylinux:9",
+                        "localhost/homelab-playbook-reverse-proxy-rockylinux9:local",
+                        "homelab-playbook-reverse-proxy-rockylinux9",
                         "/usr/lib/systemd/systemd",
                         "Containerfile.rockylinux9",
                     ),
@@ -266,6 +290,7 @@ class RunnerCliTests(unittest.TestCase):
         for selector in (
             "system_maintenance/default",
             "system_maintenance/baseline",
+            "reverse_proxy/default",
         ):
             with self.subTest(selector=selector):
                 self.assertEqual(selector, parse_selector([selector]))

@@ -1,0 +1,54 @@
+---
+- name: Validate reverse proxy inputs and host authority
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install distribution reverse proxy package
+  ansible.builtin.import_tasks: install.yml
+
+- name: Establish reverse proxy filesystem and service boundaries
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Apply pending systemd manager configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Start committed reverse proxy configuration
+  ansible.builtin.systemd_service:
+    name: caddy.service
+    enabled: true
+    state: started
+
+- name: Reconcile shared host firewall policy
+  ansible.builtin.include_role:
+    name: security_baseline
+    tasks_from: firewall.yml
+    public: false
+
+- name: Verify shared host firewall policy
+  ansible.builtin.include_role:
+    name: os_baseline_verify
+    tasks_from: firewall.yml
+    public: false
+  vars:
+    os_baseline_verify_expected_management_sources: >-
+      {{ reverse_proxy_expected_management_sources }}
+    os_baseline_verify_expected_firewall_services: >-
+      {{ reverse_proxy_expected_firewall_services }}
+
+- name: Render candidate reverse proxy configuration
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile.candidate
+    owner: root
+    group: caddy
+    mode: '0640'
+  no_log: true
+
+- name: Activate candidate reverse proxy configuration
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/homelab-reverse-proxy, apply]
+  register: reverse_proxy_activation
+  changed_when: reverse_proxy_activation.stdout | trim == 'changed'
+  no_log: true
+
+- name: Verify provisioned reverse proxy
+  ansible.builtin.import_tasks: verify.yml

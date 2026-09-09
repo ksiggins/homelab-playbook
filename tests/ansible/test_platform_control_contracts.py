@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import types
@@ -861,6 +862,151 @@ homelab (active)
                 self.controls.security_baseline_firewall_target_from_list_all(
                     invalid
                 )
+
+    def test_permanent_proxy_rule_is_removed_without_runtime_activation(self) -> None:
+        desired_rule = (
+            'rule family="ipv4" source address="10.0.0.0/24" '
+            'port port="22" protocol="tcp" accept'
+        )
+        stale_rule = (
+            'rule family="ipv4" source address="10.2.0.0/24" '
+            'port port="443" protocol="tcp" accept'
+        )
+        tasks = load_tasks("roles/security_baseline/tasks/firewall.yml")
+        offline_tasks = [
+            copy.deepcopy(
+                next(task for task in tasks if task["name"] == name)
+            )
+            for name in (
+                "Read permanent rich rules without runtime activation",
+                "Remove extra permanent rich rules without runtime activation",
+            )
+        ]
+
+        (REPOSITORY_ROOT / ".tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            dir=REPOSITORY_ROOT / ".tmp"
+        ) as directory:
+            root = Path(directory)
+            state = root / "rules.yml"
+            state.write_text(
+                yaml.safe_dump([desired_rule, stale_rule]), encoding="utf-8"
+            )
+            calls = root / "calls.yml"
+            firewall = root / "firewall-cmd"
+            firewall.write_text(
+                f"""#!{sys.executable}
+import sys
+from pathlib import Path
+
+import yaml
+
+state = Path({str(state)!r})
+calls = Path({str(calls)!r})
+rules = yaml.safe_load(state.read_text(encoding="utf-8"))
+history = yaml.safe_load(calls.read_text(encoding="utf-8")) if calls.exists() else []
+history.append(sys.argv[1:])
+calls.write_text(yaml.safe_dump(history), encoding="utf-8")
+if "--list-rich-rules" in sys.argv:
+    print("\\n".join(rules))
+else:
+    argument = next(value for value in sys.argv if value.startswith("--remove-rich-rule="))
+    rules.remove(argument.removeprefix("--remove-rich-rule="))
+    state.write_text(yaml.safe_dump(rules), encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
+            firewall.chmod(0o755)
+            for task in offline_tasks:
+                task["ansible.builtin.command"]["argv"][0] = str(firewall)
+            playbook = root / "reconcile.yml"
+            playbook.write_text(
+                yaml.safe_dump(
+                    [
+                        {
+                            "name": "Reconcile permanent firewall without runtime",
+                            "hosts": "localhost",
+                            "connection": "local",
+                            "gather_facts": False,
+                            "vars": {
+                                "security_baseline_apply_firewall_runtime": False,
+                                "security_baseline_firewall_desired_rules": [
+                                    desired_rule
+                                ],
+                            },
+                            "tasks": offline_tasks,
+                        }
+                    ],
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", str(playbook)],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(
+                [desired_rule], yaml.safe_load(state.read_text(encoding="utf-8"))
+            )
+            self.assertEqual(
+                [
+                    ["--zone=homelab", "--list-rich-rules"],
+                    [
+                        "--zone=homelab",
+                        f"--remove-rich-rule={stale_rule}",
+                    ],
+                ],
+                yaml.safe_load(calls.read_text(encoding="utf-8")),
+            )
+
+    def test_offline_rule_cleanup_skips_when_runtime_is_active(self) -> None:
+        tasks = load_tasks("roles/security_baseline/tasks/firewall.yml")
+        offline_tasks = [
+            task
+            for task in tasks
+            if task["name"]
+            in {
+                "Read permanent rich rules without runtime activation",
+                "Remove extra permanent rich rules without runtime activation",
+            }
+        ]
+        (REPOSITORY_ROOT / ".tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            dir=REPOSITORY_ROOT / ".tmp"
+        ) as directory:
+            playbook = Path(directory) / "skip-offline.yml"
+            playbook.write_text(
+                yaml.safe_dump(
+                    [
+                        {
+                            "name": "Skip offline cleanup for a live firewall",
+                            "hosts": "localhost",
+                            "connection": "local",
+                            "gather_facts": False,
+                            "vars": {
+                                "security_baseline_apply_firewall_runtime": True,
+                                "security_baseline_firewall_desired_rules": [],
+                            },
+                            "tasks": offline_tasks,
+                        }
+                    ],
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", str(playbook)],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(2, result.stdout.count("skipping: [localhost]"))
 
     def test_false_to_true_guard_transition_emits_supported_reload_path(self) -> None:
         tasks = load_tasks("roles/security_baseline/tasks/firewall.yml")

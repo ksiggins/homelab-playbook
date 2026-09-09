@@ -1250,7 +1250,9 @@ class SourceContractTests(unittest.TestCase):
             normalize_expression(
                 "{{ {'management_sources': "
                 "os_baseline_verify_expected_management_sources, "
-                "'services': os_baseline_verify_expected_firewall_services} "
+                "'services': os_baseline_verify_expected_firewall_services, "
+                "'reverse_proxy_routes': reverse_proxy_routes | default([]), "
+                "'reverse_proxy_sources': reverse_proxy_client_sources | default([])} "
                 "| os_baseline_verify_firewall_rules }}"
             ),
             normalize_expression(firewall_inputs["os_baseline_verify_firewall_rules"]),

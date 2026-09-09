@@ -1,0 +1,213 @@
+---
+- name: Converge reverse proxy role with two routes
+  hosts: reverse_proxy_hosts
+  gather_facts: true
+  become: true
+  vars:
+    reverse_proxy_molecule_routes:
+      - hostname: app.example.test
+        backend_port: 18080
+        certificate_name: fixture
+      - hostname: other.example.test
+        backend_port: 18080
+        certificate_name: fixture
+  tasks:
+    - name: Discover the rootless container private address
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - >-
+            import ipaddress, socket;
+            values={entry[4][0] for entry in
+            socket.getaddrinfo(socket.gethostname(), 0, socket.AF_INET)};
+            print(next(value for value in sorted(values)
+            if ipaddress.ip_address(value).is_private
+            and not ipaddress.ip_address(value).is_loopback))
+      register: reverse_proxy_molecule_private_address
+      changed_when: false
+
+    - name: Record the rootless container private address  # noqa: var-naming[no-role-prefix]
+      ansible.builtin.set_fact:
+        reverse_proxy_molecule_address: >-
+          {{ reverse_proxy_molecule_private_address.stdout | trim }}
+        security_baseline_management_sources:
+          - >-
+            {{ reverse_proxy_molecule_private_address.stdout | trim }}/32
+    - name: Inspect whether the distribution Caddy account exists
+      ansible.builtin.command:
+        argv:
+          - getent
+          - passwd
+          - caddy
+      register: reverse_proxy_molecule_caddy_account
+      changed_when: false
+      failed_when: false
+
+    - name: Record whether this is the first route activation
+      ansible.builtin.set_fact:
+        reverse_proxy_molecule_first_activation: >-
+          {{ reverse_proxy_molecule_caddy_account.rc != 0 }}
+
+    - name: Establish the role-owned package and service boundary
+      when: reverse_proxy_molecule_first_activation
+      block:
+        - name: Converge the initial admin-only service  # noqa: var-naming[no-role-prefix]
+          ansible.builtin.include_role:
+            name: reverse_proxy
+          vars:
+            reverse_proxy_bind_addresses: []
+            reverse_proxy_client_sources: []
+            reverse_proxy_routes: []
+            security_baseline_apply_firewall_runtime: false
+            os_baseline_verify_runtime_controls: false
+      rescue:
+        - name: Diagnose unexpected initial admin-only convergence failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: apply
+            reverse_proxy_molecule_diagnostic_context: Initial admin-only convergence
+
+    - name: Reconcile disposable certificate directory metadata
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: caddy
+        mode: '0750'
+      loop:
+        - /etc/caddy/tls/fixture
+        - /etc/caddy/tls/fixture/v1
+        - /etc/caddy/tls/fixture/v2
+        - /etc/caddy/tls/fixture/expired
+        - /etc/caddy/tls/fixture/hostname-mismatch
+        - /etc/caddy/tls/fixture/key-mismatch
+
+    - name: Reconcile disposable certificate file metadata
+      ansible.builtin.file:
+        path: "/etc/caddy/tls/fixture/{{ item.version }}/{{ item.name }}"
+        state: file
+        owner: root
+        group: caddy
+        mode: '0640'
+      loop:
+        - {version: v1, name: fullchain.pem}
+        - {version: v1, name: privkey.pem}
+        - {version: v2, name: fullchain.pem}
+        - {version: v2, name: privkey.pem}
+        - {version: expired, name: fullchain.pem}
+        - {version: expired, name: privkey.pem}
+        - {version: hostname-mismatch, name: fullchain.pem}
+        - {version: hostname-mismatch, name: privkey.pem}
+        - {version: key-mismatch, name: fullchain.pem}
+        - {version: key-mismatch, name: privkey.pem}
+      loop_control:
+        label: "{{ item.version }}/{{ item.name }}"
+
+    - name: Read the initial admin-only boot configuration
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+        checksum_algorithm: sha256
+      register: reverse_proxy_molecule_admin_boot
+      when: reverse_proxy_molecule_first_activation
+
+    - name: Select mismatched material for failed first activation
+      ansible.builtin.file:
+        src: key-mismatch
+        dest: /etc/caddy/tls/fixture/current
+        state: link
+        owner: root
+        group: caddy
+        follow: false
+        force: true
+      when: reverse_proxy_molecule_first_activation
+
+    - name: Prove failed first route activation keeps admin-only runtime
+      when: reverse_proxy_molecule_first_activation
+      block:
+        - name: Attempt first activation with mismatched certificate material  # noqa: var-naming[no-role-prefix]
+          ansible.builtin.include_role:
+            name: reverse_proxy
+          vars:
+            reverse_proxy_bind_addresses:
+              - "{{ reverse_proxy_molecule_address }}"
+            reverse_proxy_client_sources:
+              - "{{ reverse_proxy_molecule_address }}/32"
+            reverse_proxy_routes:
+              - hostname: app.example.test
+                backend_port: 18080
+                certificate_name: fixture
+            security_baseline_apply_firewall_runtime: false
+            os_baseline_verify_runtime_controls: false
+
+        - name: Reject an unexpected successful first activation
+          ansible.builtin.fail:
+            msg: Mismatched certificate material unexpectedly activated
+      rescue:
+        - name: Read listeners after failed first activation
+          ansible.builtin.command:
+            argv:
+              - /usr/local/libexec/reverse-proxy-molecule-probe.py
+              - listeners
+              - "{{ reverse_proxy_molecule_address }}"
+          register: reverse_proxy_molecule_first_failure_listeners
+          changed_when: false
+
+        - name: Read boot configuration after failed first activation
+          ansible.builtin.stat:
+            path: /etc/caddy/Caddyfile
+            checksum_algorithm: sha256
+          register: reverse_proxy_molecule_after_first_failure_boot
+
+        - name: Confirm Caddy remains active after failed first activation
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/systemctl
+              - is-active
+              - --quiet
+              - caddy.service
+          changed_when: false
+
+        - name: Assert failed first activation preserved admin-only state
+          ansible.builtin.assert:
+            that:
+              - >-
+                reverse_proxy_molecule_after_first_failure_boot.stat.checksum
+                == reverse_proxy_molecule_admin_boot.stat.checksum
+              - >-
+                (reverse_proxy_molecule_first_failure_listeners.stdout | from_json)
+                .tcp_443 | length == 0
+              - >-
+                ansible_failed_task.name
+                == 'Activate candidate reverse proxy configuration'
+              - ansible_failed_result.rc == 1
+
+    - name: Reconcile disposable certificate selection metadata
+      ansible.builtin.file:
+        src: v1
+        dest: /etc/caddy/tls/fixture/current
+        state: link
+        owner: root
+        group: caddy
+        follow: false
+        force: true
+
+    - name: Apply and diagnose the valid two-route configuration
+      block:
+        - name: Apply the two-route reverse proxy configuration  # noqa: var-naming[no-role-prefix]
+          ansible.builtin.include_role:
+            name: reverse_proxy
+          vars:
+            reverse_proxy_bind_addresses:
+              - "{{ reverse_proxy_molecule_address }}"
+            reverse_proxy_client_sources:
+              - "{{ reverse_proxy_molecule_address }}/32"
+            reverse_proxy_routes: "{{ reverse_proxy_molecule_routes }}"
+            security_baseline_apply_firewall_runtime: false
+            os_baseline_verify_runtime_controls: false
+      rescue:
+        - name: Diagnose unexpected valid route convergence failure
+          ansible.builtin.include_tasks: tasks/unexpected_failure.yml
+          vars:
+            reverse_proxy_molecule_diagnostic_action: apply
+            reverse_proxy_molecule_diagnostic_context: Valid two-route convergence

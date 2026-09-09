@@ -4,7 +4,9 @@
     security_baseline_firewall_desired_rules: >-
       {{ {
            'management_sources': security_baseline_management_sources,
-           'services': security_baseline_firewall_services
+           'services': security_baseline_firewall_services,
+           'reverse_proxy_routes': reverse_proxy_routes | default([]),
+           'reverse_proxy_sources': reverse_proxy_client_sources | default([])
          } | security_baseline_firewall_rules }}
   no_log: true
 
@@ -377,6 +379,30 @@
 - name: Prove desired management path before removing stale firewall rules
   ansible.builtin.wait_for_connection:
   when: security_baseline_apply_firewall_runtime | bool
+
+- name: Read permanent rich rules without runtime activation
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/firewall-offline-cmd
+      - --zone=homelab
+      - --list-rich-rules
+  register: security_baseline_firewall_offline_permanent_rules
+  changed_when: false
+  no_log: true
+  when: not security_baseline_apply_firewall_runtime | bool
+
+- name: Remove extra permanent rich rules without runtime activation
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/firewall-offline-cmd
+      - --zone=homelab
+      - "--remove-rich-rule={{ item }}"
+  loop: >-
+    {{ security_baseline_firewall_offline_permanent_rules.stdout_lines
+       | difference(security_baseline_firewall_desired_rules) }}
+  changed_when: true
+  no_log: true
+  when: not security_baseline_apply_firewall_runtime | bool
 
 - name: Read runtime homelab policy before exact reconciliation
   ansible.builtin.include_tasks: firewall-read-state.yml

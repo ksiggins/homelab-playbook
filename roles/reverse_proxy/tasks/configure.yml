@@ -1,0 +1,205 @@
+---
+- name: Inspect reverse proxy parent directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc
+    - /etc/systemd
+    - /etc/systemd/system
+    - /etc/tmpfiles.d
+    - /usr
+    - /usr/local
+    - /var
+    - /var/lib
+    - /run
+    - /run/lock
+  register: reverse_proxy_parent_directories
+
+- name: Reject unsafe reverse proxy parent directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - not item.stat.islnk
+      - item.stat.uid == 0
+      - >-
+        (item.item == '/run/lock'
+         and item.stat.mode[0] == '1')
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      A reverse proxy parent directory is missing, writable, or outside root
+      ownership
+  loop: "{{ reverse_proxy_parent_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect managed reverse proxy directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc/caddy
+    - /etc/caddy/tls
+    - /var/lib/caddy
+    - /var/lib/homelab-reverse-proxy
+    - /usr/local/libexec
+    - /etc/systemd/system/caddy.service.d
+    - /run/caddy
+  register: reverse_proxy_filesystem_boundaries
+
+- name: Reject unsafe existing reverse proxy filesystem boundaries
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isdir
+      - not item.stat.exists or not item.stat.islnk
+      - >-
+        not item.stat.exists
+        or (item.item in ['/var/lib/caddy', '/run/caddy']
+            and item.stat.pw_name == 'caddy'
+            and item.stat.gr_name == 'caddy')
+        or (item.item not in ['/var/lib/caddy', '/run/caddy']
+            and item.stat.uid == 0)
+      - >-
+        not item.stat.exists
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      An existing reverse proxy directory has unsafe ownership, type, or
+      permissions
+  loop: "{{ reverse_proxy_filesystem_boundaries.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect managed reverse proxy files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /etc/caddy/Caddyfile
+    - /etc/caddy/Caddyfile.candidate
+    - /var/lib/homelab-reverse-proxy/managed
+    - /usr/local/libexec/homelab-reverse-proxy
+    - /etc/systemd/system/caddy.service.d/override.conf
+    - /etc/tmpfiles.d/homelab-reverse-proxy.conf
+    - /run/lock/homelab-reverse-proxy.lock
+  register: reverse_proxy_managed_files
+
+- name: Reject unsafe existing reverse proxy files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.uid == 0
+      - not item.stat.exists or item.stat.nlink == 1
+      - >-
+        not item.stat.exists
+        or (item.stat.mode[-2] in ['0', '1', '4', '5']
+            and item.stat.mode[-1] in ['0', '1', '4', '5'])
+    fail_msg: >-
+      An existing reverse proxy file has unsafe ownership, type, links, or
+      permissions
+  loop: "{{ reverse_proxy_managed_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Establish administrator-owned reverse proxy directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/caddy, group: caddy, mode: '0750'}
+    - {path: /etc/caddy/tls, group: caddy, mode: '0750'}
+    - {path: /var/lib/homelab-reverse-proxy, group: root, mode: '0700'}
+    - {path: /usr/local/libexec, group: root, mode: '0755'}
+    - {path: /etc/systemd/system/caddy.service.d, group: root, mode: '0755'}
+
+- name: Establish private Caddy state directory
+  ansible.builtin.file:
+    path: /var/lib/caddy
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: '0700'
+
+- name: Establish initial admin-only boot configuration
+  ansible.builtin.template:
+    src: Caddyfile.admin.j2
+    dest: /etc/caddy/Caddyfile
+    owner: root
+    group: caddy
+    mode: '0640'
+  when: "'caddy' not in ansible_facts['packages']"
+  no_log: true
+
+- name: Mark reverse proxy as repository managed
+  ansible.builtin.copy:
+    content: "managed by homelab-playbook\n"
+    dest: /var/lib/homelab-reverse-proxy/managed
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Remove package-added supplementary groups from Caddy
+  ansible.builtin.user:
+    name: caddy
+    groups: ''
+    append: false
+
+- name: Install root-owned reverse proxy activation helper
+  ansible.builtin.copy:
+    src: activate.py
+    dest: /usr/local/libexec/homelab-reverse-proxy
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install reverse proxy volatile path policy
+  ansible.builtin.template:
+    src: homelab-reverse-proxy.tmpfiles.j2
+    dest: /etc/tmpfiles.d/homelab-reverse-proxy.conf
+    owner: root
+    group: root
+    mode: '0644'
+  register: reverse_proxy_tmpfiles_configuration
+
+- name: Apply reverse proxy volatile path policy
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemd-tmpfiles
+      - --create
+      - /etc/tmpfiles.d/homelab-reverse-proxy.conf
+  changed_when: reverse_proxy_tmpfiles_configuration.changed
+
+- name: Reconcile private runtime directory
+  ansible.builtin.file:
+    path: /run/caddy
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: '0700'
+
+- name: Reconcile root-owned deployment lock
+  ansible.builtin.file:
+    path: /run/lock/homelab-reverse-proxy.lock
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    access_time: preserve
+    modification_time: preserve
+
+- name: Install hardened reverse proxy systemd override
+  ansible.builtin.template:
+    src: caddy.service.conf.j2
+    dest: /etc/systemd/system/caddy.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd manager for reverse proxy
+    - Restart reverse proxy for systemd policy change

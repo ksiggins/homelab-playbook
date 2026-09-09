@@ -1,7 +1,9 @@
 # Documentation
 
 Use the [root README command reference](../README.md#running-playbooks) for
-routine playbook operations. Guides cover setup and recovery procedures.
+routine playbook operations and subsystem READMEs for automation usage and
+configuration. Guides cover operator-executed setup and recovery procedures;
+specifications record design decisions and integration contracts.
 
 ## Guides
 
@@ -44,3 +46,6 @@ routine playbook operations. Guides cover setup and recovery procedures.
   reusable rootless container conventions without deploying applications.
 - [007 — Off-cluster TLS trust](specs/007-off-cluster-tls-trust.md) — Records the
   selected hybrid topology and NUC #4 certificate automation design.
+- [008 — Shared private reverse proxy](specs/008-shared-private-reverse-proxy.md) —
+  Defines host-level Caddy, private HTTPS routes, external certificate delivery,
+  configuration recovery, and service integration contracts.

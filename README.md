@@ -87,6 +87,24 @@ establish and check host capability and shared directories. They deploy no
 applications. See the [Podman playbook README](playbooks/podman/README.md) for
 account inputs, ownership, failure recovery, and validation boundaries.
 
+### Shared private HTTPS commands
+
+Caddy runs directly on the host under systemd. Separately managed Podman
+applications publish HTTP backends on host loopback; the shared proxy owns
+private TCP/443 and consumes external certificates supplied under issue #5.
+
+| Command | Purpose |
+| --- | --- |
+| `mise run playbook -- reverse-proxy provision production` | Install the distribution package, reconcile declared routes, and verify. |
+| `mise run playbook -- reverse-proxy verify production` | Observe the installed proxy, TLS, and private firewall policy without repairs. |
+
+The production route list is empty. Initial provisioning creates an admin-only
+service with no HTTPS listener. Activating routes requires operator-supplied
+private inputs and externally deployed certificates. Caddy is an unpinned system
+package upgraded through existing OS maintenance; package updates may restart
+the shared service. See the [proxy README](playbooks/reverse-proxy/README.md)
+for inputs, prerequisites, and troubleshooting.
+
 ## Inventories
 
 Select one of these inventory arguments:
@@ -148,7 +166,9 @@ rootless Podman scenario for Debian 13 and Rocky Linux 9. The same platform set
 runs locally and in GitHub's native AMD64 matrix.
 
 `mise run test:molecule -- system_maintenance/baseline` runs complete Debian
-and Rocky composition. CI runs both platforms for both scenarios as four exact
+and Rocky composition. `mise run test:molecule -- reverse_proxy/default` exercises
+the private proxy using disposable certificates and HTTP/WebSocket backends.
+CI runs both platforms for all three scenarios as six exact
 selector-and-platform matrix jobs. Container results do not prove physical
 reboot, host-kernel enforcement, real network reachability, or Semaphore
 scheduling and notification delivery.
