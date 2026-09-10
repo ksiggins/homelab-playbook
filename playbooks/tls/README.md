@@ -2,8 +2,9 @@
 
 These playbooks install and operate the NUC host issuer from
 [specification 007](../../docs/specs/007-off-cluster-tls-trust.md). They target
-only the `tls_hosts` inventory group through `mise run playbook`. That group has
-no active host until the operator supplies and authorizes one.
+only the `tls_hosts` inventory group through `mise run playbook`. Production
+registers `nuc4` in both `tls_hosts` and `reverse_proxy_hosts`, with renewal
+disabled. Inventory membership does not authorize a live playbook run.
 
 The TLS command family accepts only the `production` inventory. The gateway
 rejects staging and frozen inventory selections because this implementation has
@@ -25,19 +26,27 @@ skip preflight checks.
 
 ## Required inputs
 
-Declare these public values for the selected host:
+Public inventory declares stable issuer IDs and a disabled timer. Supply live
+namespace, contact, routes, listener addresses, and client networks in
+`inventory/production/host_vars/nuc4/secrets.sops.yml` through the existing
+[operator SOPS workflow](../../docs/guides/sops-secrets.md). Host variables
+override the empty group defaults without duplicating values between TLS and
+Caddy. This synthetic example shows the required shape:
 
 ```yaml
 tls_automation_namespace: infra.example.com
 tls_automation_email: acme@example.com
-tls_automation_reader_gid: 2001
-tls_automation_endpoints:
-  - hostname: modem.infra.example.com
-    address: 192.0.2.10
-    port: 443
+reverse_proxy_bind_addresses:
+  - 10.20.30.40
+reverse_proxy_client_sources:
+  - 10.20.0.0/16
+reverse_proxy_routes:
   - hostname: room-alert.infra.example.com
-    address: 192.0.2.10
-    port: 443
+    certificate_name: infra
+    backend:
+      transport: http
+      address: 10.20.30.60
+      port: 80
 tls_automation_issuer_uid: 2010
 tls_automation_issuer_gid: 2010
 tls_automation_timer_enabled: false
@@ -48,8 +57,20 @@ namespace beneath the registered domain. The role derives the sole certificate
 SAN as `*.<namespace>`. Each endpoint hostname must be directly beneath that
 namespace and each address must be a private unicast IP literal.
 
-The reader GID must already exist and must differ from both issuer IDs. Assign
-an unused, stable UID and GID for `svc-acme`. The role records the allocation in
+TLS derives verification targets from every `infra` route and every declared
+Caddy listener at TCP/443. Do not maintain a separate endpoint list. Each route
+must fit the exact wildcard namespace. The public `tls_hosts` defaults declare
+`reverse_proxy_deferred_certificates: [infra]`, allowing those routes to remain
+inactive until the first certificate exists.
+Provisioning rejects a declaration that differs from Caddy's committed manifest
+or its verified ingress binding. Renewal repeats this check under the deployment
+lock before certificate operations.
+
+Provision Caddy first. TLS resolves the existing `caddy` group by name; its
+numeric GID is not an operator allocation. A supplied legacy
+`tls_automation_reader_gid` must match that group. Issuer IDs must differ from
+the reader GID. The declared `2010:2010` issuer allocation is checked for
+collisions before mutation. The role records the allocation in
 `/etc/homelab-tls/.issuer-account.json`. It rejects identity collisions,
 partial account state, allocation changes, and an existing account without the
 matching root-owned record.
@@ -63,27 +84,32 @@ capability. The host does not need an age identity for routine renewal.
 
 ## Disabled installation and bootstrap
 
-The timer defaults to disabled. A disabled provisioning run does not require a
-credential or `/usr/local/libexec/homelab-tls-caddy`. It installs pinned lego
-5.4.1, the Python runtime, fixed launchers, state boundaries, and systemd units.
-It does not contact an ACME server, publish a certificate, or create a Caddy
-adapter.
+The timer defaults to disabled. A disabled TLS provisioning run requires the
+installed Caddy capability and declared route inputs, but no Cloudflare
+credential. It installs pinned lego 5.4.1, the Python runtime, the real fixed
+Caddy adapter, state boundaries, and systemd units. It does not contact an ACME
+server or publish a certificate.
 
-Issue #25 must install `/usr/local/libexec/homelab-tls-caddy`. The adapter has
+Issue #5 installs `/usr/local/libexec/homelab-tls-caddy`. The adapter has
 three fixed actions: `validate <root-owned-candidate-directory>`, `reload`, and
 `deactivate`. It must validate Caddy's real candidate access and configuration,
 force the service to reopen certificate files, and prove the route inactive
-after a failed first publication. The TLS role does not assume a Caddy service
-name, user, group, configuration model, or reload command. The root coordinator
-unit can write only `/var/lib/homelab-tls`; the adapter must work within that
-boundary and the Caddy deployment from issue #25.
+after a failed first publication. It integrates with the host `caddy.service`
+and package-owned `caddy:caddy` identity. The root coordinator can write only
+its managed state and transaction roots: `/var/lib/homelab-tls`, `/etc/caddy`,
+and `/var/lib/homelab-reverse-proxy`. The issuer still writes only its private
+ACME state and receives the Cloudflare credential through systemd.
 
 Use this sequence for the first certificate:
 
-1. Provision with `tls_automation_timer_enabled: false`. The credential can be
-   omitted for this capability-only step.
-2. Install the issue #25 adapter and provide the protected Cloudflare token.
-   Provision again with the timer still disabled to install the credential.
+1. Declare the intended routes and private ingress in protected inventory.
+   Run an authorized `reverse-proxy provision production --limit nuc4` through
+   `mise run playbook --`. Provisioning verifies the firewall and commits the
+   desired manifest. Routes using the pending `infra` certificate stay inactive;
+   unrelated routes retain their certificates and service.
+2. Run authorized `tls provision production --limit nuc4` with the timer false.
+   The credential can be omitted for capability installation. Add the scoped
+   Cloudflare token through SOPS and provision again before initial renewal.
 3. Explicitly authorize and run one renewal:
 
    ```bash
@@ -120,11 +146,14 @@ keeps recovery blocked; do not remove the journal to bypass it.
 `in_progress` attempt can indicate an interrupted operation; it is not evidence
 of successful completion. Observational verification does not change status.
 
-Keep encrypted backups of `/var/lib/homelab-tls-issuer` ACME account state and
-`/var/lib/homelab-tls` publication state. Preserve numeric ownership and private
-key confidentiality. On a replacement host, restore administrative access and
+Keep encrypted backups of `/var/lib/homelab-tls-issuer` ACME account state,
+`/etc/caddy` configuration, trust, certificate and recovery state,
+`/var/lib/homelab-tls` status,
+and `/var/lib/homelab-reverse-proxy` configuration recovery state. Preserve
+issuer ownership and private key confidentiality. On a replacement host, restore administrative access and
 the OS baseline first. Reconcile the role with the timer disabled, restore
-state when available, install the issue #25 adapter, run one authorized renewal
+state when available, reconcile certificate-reader ownership to the installed
+`caddy` group, run one authorized renewal
 if necessary, verify the active endpoints, and only then enable the timer.
 
 If ACME account state is unavailable, restore independent DNS, time, outbound
@@ -132,10 +161,17 @@ network, and SOPS credential access before an explicitly authorized renewal.
 Account for CA rate limits. Direct appliance access remains the recovery path
 when Caddy or local DNS is unavailable.
 
-The registered `system_maintenance/baseline` Molecule scenario installs the
-disabled capability on disposable Debian 13 and Rocky Linux 9 hosts. It checks
-packages, identity isolation, file metadata, parsed systemd units, the missing
-adapter failure, manual-start waiting for successful and failed synthetic jobs,
-and the installed runtime with distribution Python and
-cryptography. It makes no ACME request and does not prove live Caddy reload,
-endpoint behavior, boot persistence, or production renewal.
+Certificate preparation is part of production publication, not an ACME staging
+environment. Root-only temporary files and the publication journal live under
+`/etc/caddy/tls/.homelab-tls-private`; complete readable generations live under
+`/etc/caddy/tls/infra`. Keeping them on one filesystem permits atomic moves.
+The previous `/var/lib/homelab-tls/published` layout is not migrated silently:
+nonempty state or an old pending journal blocks provisioning for operator recovery.
+
+The registered `system_maintenance/baseline` Molecule scenario installs real
+admin-only Caddy and disabled TLS on disposable Debian 13 and Rocky Linux 9 hosts.
+It checks identity isolation, file metadata, parsed units, missing-credential
+rejection, manual-start waiting, and the runtime with distribution Python and
+cryptography. The `reverse_proxy/default` scenario covers integrated certificate
+activation and recovery. These tests make no ACME requests and do not establish
+production issuance, device browser compatibility, or physical boot evidence.

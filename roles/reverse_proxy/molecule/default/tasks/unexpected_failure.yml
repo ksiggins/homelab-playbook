@@ -19,7 +19,9 @@
   ansible.builtin.command:
     argv:
       - /usr/local/libexec/homelab-reverse-proxy
-      - "{{ reverse_proxy_molecule_diagnostic_action }}"
+      - >-
+        {{ 'apply-desired' if reverse_proxy_molecule_diagnostic_action == 'apply'
+           else reverse_proxy_molecule_diagnostic_action }}
   register: reverse_proxy_molecule_helper_diagnostic
   changed_when: false
   failed_when: false

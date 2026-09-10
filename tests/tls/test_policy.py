@@ -21,6 +21,19 @@ def example_policy():
 
 
 class PolicyTests(unittest.TestCase):
+    def test_same_hostname_on_distinct_listeners_is_fully_verified(self):
+        raw = example_policy()
+        raw["endpoints"].append(dict(raw["endpoints"][0], address="fd00::40"))
+        policy = parse_policy(json.dumps(raw).encode())
+        self.assertEqual(2, len(policy.endpoints))
+
+    def test_address_spellings_cannot_hide_duplicate_endpoints(self):
+        raw = example_policy()
+        raw["endpoints"][0]["address"] = "fd00::40"
+        raw["endpoints"].append(dict(raw["endpoints"][0], address="fd00:0:0:0:0:0:0:40"))
+        with self.assertRaises(ValueError):
+            parse_policy(json.dumps(raw).encode())
+
     def test_exact_wildcard_and_private_listener(self):
         policy = parse_policy(json.dumps(example_policy()).encode())
         self.assertEqual(policy.sans, ["*.infra.example.com"])

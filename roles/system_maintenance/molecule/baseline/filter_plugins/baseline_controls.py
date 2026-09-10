@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import ipaddress
 from collections.abc import Mapping
 
 
@@ -108,6 +109,7 @@ def system_maintenance_molecule_baseline_firewall_errors(
     binding_text: object,
     policy_text: object,
     os_family: object,
+    https_sources: object = (),
 ) -> list[str]:
     """Return exact permanent firewall policy differences."""
     if (
@@ -149,7 +151,14 @@ def system_maintenance_molecule_baseline_firewall_errors(
         for line in zone["--list-rich-rules"]["stdout_lines"]
         if line.strip()
     ]
-    if rich_rules != [EXPECTED_RICH_RULE]:
+    expected_rules = [EXPECTED_RICH_RULE]
+    for source in https_sources:
+        network = ipaddress.ip_network(source, strict=True)
+        expected_rules.append(
+            f'rule family="ipv{network.version}" source address="{network}" '
+            'port port="443" protocol="tcp" accept'
+        )
+    if sorted(rich_rules) != sorted(expected_rules):
         errors.append("rich-rules")
     if any(str(result["stdout"]).strip() for result in direct.values()):
         errors.append("direct-openings")

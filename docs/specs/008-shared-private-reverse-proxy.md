@@ -52,6 +52,10 @@ benefit for this service that outweighs the additional mechanisms.
 Install the unpinned `caddy` distribution package without DNS-provider plugins.
 Use Debian 13's native APT repository. Rocky Linux 9 uses its compatible EPEL
 package, with the signed EPEL repository explicitly established by the role.
+The OS maintenance trust check recognizes the standard `epel` and
+`epel-cisco-openh264` repositories only when the exact root-owned Caddy ownership
+marker is present, and requires their EPEL 9 signing key. This keeps repeat
+provisioning and maintenance compatible with the installed Caddy package source.
 The demonstrated need for EPEL is the Caddy package; no upstream Caddy repository
 or standalone binary installer is introduced. Installation uses `state: present`;
 existing OS maintenance owns package upgrades. Daily security updates retain
@@ -106,16 +110,30 @@ Use an explicit `reverse_proxy_hosts` inventory group and these service inputs:
 - `reverse_proxy_client_sources`: non-empty explicit private client CIDRs.
 - `reverse_proxy_routes`: a complete list of route declarations, initially
   empty until the operator supplies certificates and approved services.
-- Each route contains `hostname`, `backend_port`, and `certificate_name`.
+- `reverse_proxy_deferred_certificates`: empty or exactly `[infra]`; only this
+  explicit dependency may be missing before first certificate publication.
+- `reverse_proxy_trust_certificates`: named immutable route-specific device
+  trust bundles supplied through protected inventory.
+- Each local application route contains `hostname`, `backend_port`, and `certificate_name`.
   A hostname is an exact DNS name, a backend port is an integer from 1024 through
   65535, and a certificate name is a restricted filesystem component.
 
 Reject duplicate hostnames, invalid types, wildcard hostnames, control
 characters, arbitrary Caddyfile fragments, URL credentials, path traversal,
-and unapproved upstream addresses. Templates always construct upstreams as
+and unapproved upstream addresses. Local application routes construct upstreams as
 `127.0.0.1:<backend_port>`. Each application owns its loopback port allocation
 and Podman port publication; the proxy owns no application account or data.
 Host loopback prevents remote access but is not a boundary between local users.
+
+Issue #5 extends routes with an explicit private-device form: `hostname`,
+`certificate_name`, and `backend`. The backend contains `transport` (`http` or
+`https`), an RFC1918 or ULA `address`, and `port` from 1 through 65535. HTTPS also
+requires `server_name` and `trust_name`, selecting
+`/etc/caddy/trust/<trust_name>.pem`. Caddy verifies the backend certificate using
+that route-specific trust and server name. HTTP accepts no TLS trust fields.
+Local and device backend forms cannot be combined. Trust names identify immutable
+content; use a new name when rotating trust so rollback can retain the old trust.
+The shared renderer supports the distribution packages' TLS transport syntax.
 
 The operator supplies live addresses, client networks, and sensitive deployment
 names through the existing protected inventory process. Public examples use
@@ -141,6 +159,17 @@ to delay WebSocket closure.
 An empty route list renders an admin-only configuration with no HTTPS listener
 and no required certificate pair. Removing the final route removes ingress
 allowances as well as listeners. It does not delete externally owned TLS files.
+
+Ansible supplies a root-only candidate desired manifest and ingress metadata
+after firewall verification. The fixed `apply-desired` helper validates their
+binding, renders effective routes, and commits configuration plus the desired
+manifest in one recoverable transaction. The committed `desired.json` contains
+the exact original manifest string and ingress metadata with its SHA256 revision.
+Only routes explicitly depending on the absent first `infra` certificate are
+deferred. Missing or malformed certificates for other routes fail activation.
+Private ingress policy follows declared routes so TLS can later activate them
+without becoming a second firewall controller. An empty effective route list
+still has no network listener. Removing all desired routes removes allowances.
 
 ## Firewall integration
 
@@ -194,6 +223,27 @@ The helper is `/usr/local/libexec/homelab-reverse-proxy`; the shared lock is
 inherited on file descriptor 9. The helper validates that inherited lock;
 the flag alone does not grant execution authority. Certificate automation must
 retain it through version selection, reload, and served-certificate verification.
+
+Issue #5 supplies the fixed `homelab-tls-caddy` adapter. TLS takes its coordinator
+lock before the Caddy lock and releases the Caddy lock during ACME network work.
+Its root-only publication journal binds certificate selection, prior and candidate
+boot configurations, and the committed desired revision. While that transaction
+is pending, ordinary configuration changes cannot replace its recovery authority.
+Startup recovery restores consistent certificate and configuration disk state
+without acquiring the TLS coordinator lock or requesting a certificate. Runtime
+recovery then verifies or retries the retained generation before new issuance.
+
+First publication activates only declared routes dependent on `infra`. Failed
+first publication restores their previous inactive state while preserving
+unrelated routes. Verify route absence in the active configuration and check
+remaining listeners and certificates; an unknown-SNI handshake alone does not
+establish route absence on a shared listener.
+
+Device trust installation uses the same deployment lock. The fixed
+`install-trust` action reads `/var/lib/homelab-reverse-proxy/trust.candidate.json`,
+validates its bounded PEM bundles, and publishes each new name without replacing
+an existing file. Existing names must have the exact declared contents and safe
+metadata. Concurrent declarations cannot change another route's trust bundle.
 
 The `reload` entry point validates the committed configuration as the service
 account and forces Caddy to reload it from the selected `current` certificate
@@ -310,8 +360,20 @@ Register any required container scenario in local and GitHub CI dispatch togethe
 Do not weaken host restrictions to accommodate nested container limitations.
 
 The rootless proxy test containers add `SYS_PTRACE` so their administrator can
-observe Caddy-owned sockets with `ss -p`. This capability belongs to the test
-container; the managed Caddy service still receives only `CAP_NET_BIND_SERVICE`.
+observe Caddy-owned sockets with `ss -p`. They also add `SYS_ADMIN` so systemd
+can create the nested coordinator filesystem sandbox. Without it, Debian's
+service can fail before execution, and systemd can skip filesystem restrictions
+in containers. An early disposable service verifies that `/usr/local` is
+read-only while the declared `/var/lib` write exception remains writable.
+The disposable services inherit the system manager's root identity rather than
+setting `User=root`: explicit user setup in nested Debian systemd prevents the
+adapter from switching to the Caddy user. The early probe verifies effective
+root identity and a successful unprivileged user switch, and the integrated
+driver independently checks its root identity. The remaining sandbox settings
+stay in place; production units retain their explicit service identities.
+These capabilities belong to the rootless test container; the
+managed Caddy service still receives only `CAP_NET_BIND_SERVICE`, and the
+production coordinator restrictions remain unchanged.
 Container checks establish permanent firewall configuration, not host-kernel
 firewall enforcement or enforcing SELinux behavior.
 

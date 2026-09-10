@@ -122,6 +122,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             "diagnose.py",
             "probe.py",
             "rotation.py",
+            "tls_integration.py",
         }
         self.assertEqual(
             required,
@@ -132,7 +133,7 @@ class MoleculeScenarioContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            {"certificate_failure.yml", "unexpected_failure.yml"},
+            {"certificate_failure.yml", "unexpected_failure.yml", "tls-integration.yml"},
             {
                 path.name
                 for path in (REVERSE_PROXY_SCENARIO_DIRECTORY / "tasks").iterdir()
@@ -175,7 +176,8 @@ class MoleculeScenarioContractTests(unittest.TestCase):
                 self.assertEqual(image, platform["image"])
                 self.assertEqual(container_name, platform["container_name"])
                 self.assertEqual(["reverse_proxy_hosts"], platform["groups"])
-                self.assertEqual(["SYS_PTRACE"], platform["container_cap_add"])
+                expected_capabilities = ["SYS_PTRACE", "SYS_ADMIN"]
+                self.assertEqual(expected_capabilities, platform["container_cap_add"])
                 self.assertIs(platform["container_privileged"], False)
                 self.assertEqual("always", platform["container_systemd"])
                 self.assertEqual("never", platform["pull"])
@@ -545,7 +547,8 @@ class MoleculeScenarioContractTests(unittest.TestCase):
         )
         self.assertEqual(1, len(documents))
         key_play = documents[0][0]
-        imported_playbook = documents[0][1]
+        imported_playbook = next(play for play in documents[0]
+                                 if "ansible.builtin.import_playbook" in play)
         key_source = str(key_play)
         self.assertIn("molecule_ephemeral_directory", key_source)
         self.assertIn("ssh-keygen", key_source)
@@ -563,6 +566,17 @@ class MoleculeScenarioContractTests(unittest.TestCase):
         )
         self.assertEqual("UTC", variables["host_identity_timezone"])
         self.assertEqual(["10.0.0.0/8"], variables["security_baseline_management_sources"])
+        proxy_task = next(
+            task
+            for play in documents[0]
+            for task in play.get("tasks", [])
+            if task.get("ansible.builtin.include_role", {}).get("name") == "reverse_proxy"
+        )
+        self.assertEqual(
+            variables["security_baseline_management_sources"],
+            proxy_task.get("vars", {}).get("security_baseline_management_sources"),
+            "OS and Caddy plays must reconcile the same synthetic management network",
+        )
         self.assertEqual(
             "/usr/bin/stat -c %y /proc/1",
             variables["os_reboot_boot_time_command"],
@@ -580,6 +594,11 @@ class MoleculeScenarioContractTests(unittest.TestCase):
 
     def test_baseline_verify_is_independent_and_states_evidence_limits(self) -> None:
         verify = load_baseline_yaml("verify.yml")[0]
+        self.assertEqual(
+            {"file": "{{ playbook_dir }}/vars/tls.yml"},
+            verify.get("pre_tasks", [{}])[0].get("ansible.builtin.include_vars"),
+            "Proxy declarations must persist into the standalone OS verification play",
+        )
         self.assertEqual("os_managed", verify["hosts"])
         self.assertIs(verify["gather_facts"], True)
         self.assertIs(verify["become"], True)

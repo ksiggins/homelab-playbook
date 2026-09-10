@@ -43,6 +43,14 @@
              | b64decode | trim }}
       no_log: true
 
+- name: Load synthetic proxy intent for the complete provisioning lifecycle
+  hosts: os_managed
+  gather_facts: false
+  tasks:
+    - name: Load shared disposable TLS and proxy declarations
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/vars/tls.yml"
+
 - name: Converge the production complete provisioning lifecycle
   ansible.builtin.import_playbook: ../../../../playbooks/os/provision.yml
   vars:
@@ -109,6 +117,18 @@
   vars_files:
     - vars/tls.yml
   tasks:
+    - name: Discover the disposable TLS address after OS Python bootstrap
+      ansible.builtin.include_tasks: tasks/tls-address.yml
+
+    - name: Install real Caddy with deferred routes before the disabled TLS capability  # noqa: var-naming[no-role-prefix]
+      ansible.builtin.include_role:
+        name: reverse_proxy
+      vars:
+        security_baseline_management_sources:
+          - 10.0.0.0/8
+        security_baseline_apply_firewall_runtime: false
+        os_baseline_verify_runtime_controls: false
+
     - name: Install the off-cluster TLS capability
       ansible.builtin.import_role:
         name: tls_automation

@@ -59,18 +59,16 @@ def parse_policy(raw):
     if type(gid) is not int or not 1 <= gid < 2**31:
         raise ValueError("reader_gid must be an explicit positive numeric group")
     endpoints = obj["endpoints"]
-    if not isinstance(endpoints, list) or not 1 <= len(endpoints) <= 32:
-        raise ValueError("declare one to 32 TLS endpoints")
+    if not isinstance(endpoints, list) or not 1 <= len(endpoints) <= 128:
+        raise ValueError("declare one to 128 TLS endpoints")
     seen = set()
     for endpoint in endpoints:
         if not isinstance(endpoint, dict) or set(endpoint) != {"hostname", "address", "port"}:
             raise ValueError("invalid endpoint fields")
         hostname = endpoint["hostname"]
         if (not isinstance(hostname, str)
-                or not re.fullmatch(rf"{LABEL}\.{re.escape(namespace)}", hostname)
-                or hostname in seen):
-            raise ValueError("endpoint hostname must be unique and directly beneath namespace")
-        seen.add(hostname)
+                or not re.fullmatch(rf"{LABEL}\.{re.escape(namespace)}", hostname)):
+            raise ValueError("endpoint hostname must be directly beneath namespace")
         address = endpoint["address"]
         if not isinstance(address, str) or "%" in address:
             raise ValueError("endpoint address must be a private IP literal")
@@ -80,6 +78,11 @@ def parse_policy(raw):
             raise ValueError("endpoint address must be a private unicast listener")
         if type(endpoint["port"]) is not int or not 1 <= endpoint["port"] <= 65535:
             raise ValueError("invalid endpoint port")
+        selection = (hostname, str(ip), endpoint["port"])
+        if selection in seen:
+            raise ValueError("endpoint selection must be unique")
+        seen.add(selection)
+        endpoint["address"] = str(ip)
     return Policy(namespace, email, gid, endpoints)
 
 

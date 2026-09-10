@@ -20,7 +20,7 @@ def registered_units(absent=False, omit_arrays=False):
     records = []
     for unit, user, path, timeout in (
         ("issuer.service", "svc-acme", "/var/lib/homelab-tls-issuer", "15min"),
-        ("renew.service", "root", "/var/lib/homelab-tls", "1h"),
+        ("renew.service", "root", "/var/lib/homelab-tls /etc/caddy /var/lib/homelab-reverse-proxy", "1h"),
         ("renew.timer", "", "", ""),
     ):
         name = "homelab-tls-" + unit
@@ -59,6 +59,21 @@ def registered_arrays(absent=False):
 
 
 class RoleUnitTests(unittest.TestCase):
+    def test_previous_canonical_write_scope_can_upgrade_only_in_preflight(self):
+        value = registered_units()
+        value["results"][1]["stdout"] = value["results"][1]["stdout"].replace(
+            "ReadWritePaths=/var/lib/homelab-tls /etc/caddy /var/lib/homelab-reverse-proxy",
+            "ReadWritePaths=/var/lib/homelab-tls",
+        )
+        self.assertTrue(validation.validate_units(value["results"], True, registered_arrays()["results"]))
+        with self.assertRaises(ValueError):
+            validation.validate_units(value["results"], False, registered_arrays()["results"])
+        value["results"][1]["stdout"] = value["results"][1]["stdout"].replace(
+            "ReadWritePaths=/var/lib/homelab-tls", "ReadWritePaths=/etc"
+        )
+        with self.assertRaises(ValueError):
+            validation.validate_units(value["results"], True, registered_arrays()["results"])
+
     def test_actual_role_assertions_accept_registered_results(self):
         tasks = []
         for filename in ("preflight.yml", "configure.yml", "timer.yml"):

@@ -1,5 +1,5 @@
 """No-argument host entrypoints. Paths and privileged operations are code-owned."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl
 import grp
 import hashlib
@@ -38,9 +38,10 @@ from .unit_contract import (SERVICE_ARRAY_PROPERTIES, exec_start_matches,
 CONFIG = Path("/etc/homelab-tls/config.json")
 STATE = Path("/var/lib/homelab-tls")
 PRIVATE = STATE / "private"
-PUBLISHED = STATE / "published"
+PUBLISHED = Path("/etc/caddy/tls/infra")
+PUBLICATION_PRIVATE = Path("/etc/caddy/tls/.homelab-tls-private")
 ISSUER_STATE = Path("/var/lib/homelab-tls-issuer")
-JOURNAL = PRIVATE / "transaction.json"
+JOURNAL = PUBLICATION_PRIVATE / "transaction.json"
 LOCK = PRIVATE / "coordinator.lock"
 STATUS = PRIVATE / "status.json"
 ADAPTER = Path("/usr/local/libexec/homelab-tls-caddy")
@@ -78,7 +79,7 @@ UNIT_CONTRACTS = {
         "NoNewPrivileges": "yes",
         "ProtectSystem": "strict",
         "PrivateTmp": "yes",
-        "ReadWritePaths": str(STATE),
+        "ReadWritePaths": str(STATE) + " /etc/caddy /var/lib/homelab-reverse-proxy",
         "LoadCredential": "",
         "FragmentPath": "/etc/systemd/system/" + RENEW_UNIT,
         "DropInPaths": "",
@@ -241,7 +242,7 @@ def _directory_without_extra_acl(path):
         os.close(descriptor)
 
 
-def validate_publication_acl_roots(private=PRIVATE, published=PUBLISHED):
+def validate_publication_acl_roots(private=PUBLICATION_PRIVATE, published=PUBLISHED):
     """Reject ACLs that could leak new private or published material."""
     _directory_without_extra_acl(private)
     _directory_without_extra_acl(published)
@@ -281,13 +282,16 @@ def inspect_host(policy):
         raise ValueError("issuer identity overlaps privileged/read boundary")
     if set(os.getgrouplist("svc-acme", account.pw_gid)) != {account.pw_gid}:
         raise ValueError("issuer must not have supplementary groups")
-    grp.getgrgid(policy.reader_gid)
+    if grp.getgrnam("caddy").gr_gid != policy.reader_gid:
+        raise ValueError("TLS reader must match installed Caddy group")
     for path, mode, gid in [(STATE, 0o750, policy.reader_gid), (PRIVATE, 0o700, 0),
+                            (PUBLICATION_PRIVATE, 0o700, 0),
                             (PUBLISHED, 0o750, policy.reader_gid)]:
         info = secure_path(path, directory=True)
         if stat.S_IMODE(info.st_mode) != mode or info.st_gid != gid:
             raise ValueError("incorrect coordinator directory permissions")
     validate_publication_acl_roots()
+    _directory_without_extra_acl(PRIVATE)
     info = secure_path(ISSUER_STATE, account.pw_uid, directory=True)
     if stat.S_IMODE(info.st_mode) != 0o700 or info.st_gid != account.pw_gid:
         raise ValueError("incorrect issuer state permissions")
@@ -409,7 +413,17 @@ def active_fingerprint(policy):
     return validate_certificate(fullchain, private_key, policy.sans, 0)
 
 
-def publisher_for(policy):
+@contextmanager
+def publication_locked(policy):
+    from .caddy import Deployment
+    deployment = Deployment(None, policy)
+    with deployment.locked():
+        yield deployment
+
+
+def publisher_for(policy, deployment=None):
+    from .caddy import Deployment
+    deployment = deployment or Deployment(None, policy)
     def validate(path):
         # Only immutable generations beneath the fixed published root may use
         # historical validity. Candidate snapshots remain current-valid.
@@ -428,21 +442,24 @@ def publisher_for(policy):
         secure_path(ADAPTER)
         fullchain, private_key = read_published_directory(path, 0, policy.reader_gid)
         validate_certificate(fullchain, private_key, policy.sans, 3600)
-        run_fixed([str(ADAPTER), "validate", str(path)])
+        deployment.operation("validate", path)
 
     def reload_and_verify(fingerprint):
         secure_path(ADAPTER)
         if not fingerprint:
             # Fixed adapter must remove the new route and prove it is inactive.
-            run_fixed([str(ADAPTER), "deactivate"])
+            deployment.operation("deactivate")
         else:
-            run_fixed([str(ADAPTER), "reload"])
+            deployment.operation("reload")
             verify_endpoints(policy, fingerprint)
 
-    return Publisher(PUBLISHED, JOURNAL, 0, policy.reader_gid, validate, reload_and_verify, preflight)
+    publisher = Publisher(PUBLISHED, JOURNAL, 0, policy.reader_gid, validate, reload_and_verify,
+                          preflight, prepare=deployment.prepare)
+    publisher.publication_context = deployment.locked
+    return publisher
 
 
-def reconcile(publisher, issue_operation, snapshot_operation):
+def reconcile(publisher, issue_operation, snapshot_operation, publication_context=nullcontext):
     result = {
         "issuance": "not_run",
         "publication": "failed",
@@ -450,7 +467,8 @@ def reconcile(publisher, issue_operation, snapshot_operation):
         "restoration_failed": False,
     }
     try:
-        recovered = publisher.recover()
+        with publication_context():
+            recovered = publisher.recover()
         if isinstance(recovered, dict):
             result.update(recovered)
             return result
@@ -467,7 +485,8 @@ def reconcile(publisher, issue_operation, snapshot_operation):
         result["issuance"] = "failed"
     try:
         fullchain, private_key = snapshot_operation()
-        result["publication"] = "changed" if publisher.publish(fullchain, private_key) else "unchanged"
+        with publication_context():
+            result["publication"] = "changed" if publisher.publish(fullchain, private_key) else "unchanged"
     except PublicationError as error:
         result["activation_failed"] = error.activation_failed
         result["restoration_failed"] = error.restoration_failed
@@ -524,7 +543,8 @@ def renew_attempt():
         raise
     result["preflight"] = "ok"
     write_status(result)
-    result.update(reconcile(publisher_for(policy), start_issuer, snapshot))
+    publisher = publisher_for(policy)
+    result.update(reconcile(publisher, start_issuer, snapshot, publisher.publication_context))
     failed = result["issuance"] == "failed" or result["publication"] == "failed"
     result["attempt"] = "failed" if failed else "completed"
     # Only fixed phase outcomes are recorded; subprocess output is never stored.
@@ -535,9 +555,11 @@ def renew_attempt():
 
 def observe(policy):
     inspect_host(policy)
-    if os.path.lexists(JOURNAL):
-        raise RuntimeError("publication recovery is pending")
-    verify_endpoints(policy, active_fingerprint(policy))
+    with publication_locked(policy) as deployment:
+        if os.path.lexists(JOURNAL):
+            raise RuntimeError("publication recovery is pending")
+        deployment.a.verify(inherited=True)
+        verify_endpoints(policy, active_fingerprint(policy))
 
 
 def main(action, arguments=None):

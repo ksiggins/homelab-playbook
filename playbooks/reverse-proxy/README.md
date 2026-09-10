@@ -37,8 +37,9 @@ permission-protected Unix admin socket; no HTTPS listener or allowance exists.
 Active routes require explicit private bind addresses and client CIDRs. HTTPS
 client sources are independent of the SSH management-source list. Supply live
 values through the existing protected inventory process. Activating routes also
-requires DNS pointing to the selected private host address and externally
-deployed trusted certificates.
+requires DNS pointing to the selected private host address and trusted
+certificates. The explicit `infra` dependency can remain pending until the
+issue #5 issuer publishes its first certificate.
 
 Synthetic configuration example:
 
@@ -53,11 +54,38 @@ reverse_proxy_routes:
     certificate_name: app
 ```
 
-Each route has an exact `hostname`, a `backend_port` from 1024 through 65535,
-and a safe `certificate_name`. Caddy always connects to
+Each local application route has an exact `hostname`, a `backend_port` from 1024
+through 65535, and a safe `certificate_name`. For these routes, Caddy connects to
 `127.0.0.1:<backend_port>`. Application roles own port allocation and loopback-only
 publication under their separate Podman accounts. No socket-based discovery or
 application account membership is required by Caddy.
+
+Private device routes replace `backend_port` with an explicit `backend` mapping.
+For example, an HTTP-only device uses:
+
+```yaml
+reverse_proxy_routes:
+  - hostname: room-alert.infra.example.com
+    certificate_name: infra
+    backend:
+      transport: http
+      address: 10.20.30.60
+      port: 80
+reverse_proxy_deferred_certificates: [infra]
+```
+
+HTTPS device backends additionally require `server_name` and `trust_name`.
+Supply the named PEM trust bundle through `reverse_proxy_trust_certificates`
+in protected inventory. Trust names are immutable; use a new name to rotate
+trust. See the [device guide](../../docs/guides/device-proxy.md) for examples
+and the modem identity prerequisite. No TLS-verification bypass is available.
+
+Provisioning commits a desired manifest together with Caddy's effective
+configuration. Only explicitly deferred `infra` routes can wait for the first
+certificate; other certificate failures stop activation. The TLS coordinator
+uses that committed manifest and its verified private ingress binding when it
+activates the first certificate. Declare live inputs in protected host variables
+so they override the public group's empty defaults.
 
 The complete desired route list is authoritative. Removing a route removes new
 requests to that backend; removing the final route removes HTTPS listeners and

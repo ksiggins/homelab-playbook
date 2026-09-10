@@ -232,6 +232,11 @@
         checksum_algorithm: sha256
       register: reverse_proxy_molecule_healthy_boot
 
+    - name: Isolate legacy Caddyfile fault injection from managed manifest ownership
+      ansible.builtin.file:
+        path: /var/lib/homelab-reverse-proxy/desired.json
+        state: absent
+
     - name: Reject invalid certificate material without disturbing healthy state
       ansible.builtin.include_tasks: tasks/certificate_failure.yml
       loop:

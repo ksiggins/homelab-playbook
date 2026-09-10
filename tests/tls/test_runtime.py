@@ -148,6 +148,7 @@ class RuntimeTests(unittest.TestCase):
             status_path.write_text('{"publication":"changed"}\n')
             status_path.chmod(0o600)
             publisher = Mock()
+            publisher.publication_context = nullcontext
             publisher.recover.side_effect = PublicationError(
                 RuntimeError("secret activation detail"),
                 RuntimeError("secret restoration detail"),
@@ -182,7 +183,8 @@ class RuntimeTests(unittest.TestCase):
 
     def test_observer_never_issues_or_reloads(self):
         with patch.object(runtime, "inspect_host"), patch.object(runtime, "active_fingerprint", return_value="abc"), \
-                patch.object(runtime, "verify_endpoints") as verify, patch.object(runtime, "run_fixed") as run:
+                patch.object(runtime, "verify_endpoints") as verify, patch.object(runtime, "run_fixed") as run, \
+                patch.object(runtime, "publication_locked", return_value=nullcontext(SimpleNamespace(a=Mock()))):
             runtime.observe(self.policy)
         verify.assert_called_once_with(self.policy, "abc")
         run.assert_not_called()
@@ -228,7 +230,10 @@ class RuntimeTests(unittest.TestCase):
             ) as current, patch.object(runtime, "secure_path"), patch.object(
                 runtime, "run_fixed", side_effect=lambda argv, **_kwargs: commands.append(argv)
             ), patch.object(runtime, "verify_endpoints") as verify:
-                publisher = runtime.publisher_for(self.policy)
+                deployment = SimpleNamespace(prepare=lambda record: None, locked=nullcontext,
+                    operation=lambda action, path=None: commands.append(
+                        [str(runtime.ADAPTER), action] + ([] if path is None else [str(path)])))
+                publisher = runtime.publisher_for(self.policy, deployment)
                 self.assertEqual("1" * 64, publisher.validate(generation))
                 self.assertEqual("2" * 64, publisher.validate(external))
                 publisher.preflight(generation)

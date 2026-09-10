@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import urllib.parse
@@ -29,8 +31,16 @@ DEBIAN_SOURCE_BYPASSES = {
     "allow-weak",
     "allow-downgrade-to-insecure",
 }
-ROCKY_ALLOWED_REPOSITORIES = {"baseos", "appstream", "extras", "crb"}
-ROCKY_KEY = re.compile(r"^/etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-9$")
+ROCKY_REPOSITORY_KEYS = {
+    repository_id: "/etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-9"
+    for repository_id in ("baseos", "appstream", "extras", "crb")
+}
+CADDY_EPEL_REPOSITORY_KEYS = {
+    repository_id: "/etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9"
+    for repository_id in ("epel", "epel-cisco-openh264")
+}
+CADDY_MANAGED_MARKER = "/var/lib/homelab-reverse-proxy/managed"
+CADDY_MANAGED_MARKER_CONTENT = b"managed by homelab-playbook\n"
 TRUE_VALUES = {"1", "yes", "true", "on"}
 
 
@@ -212,6 +222,56 @@ def _path_is_in_reposdir(path: str, reposdirs: list[str], root: pathlib.Path) ->
     return any(candidate.is_relative_to(_rooted(root, directory).resolve()) for directory in reposdirs)
 
 
+def _is_exact_caddy_marker(metadata: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+        and metadata.st_uid == 0
+        and metadata.st_gid == 0
+        and metadata.st_nlink == 1
+        and metadata.st_size == len(CADDY_MANAGED_MARKER_CONTENT)
+    )
+
+
+def _caddy_owns_epel(root: pathlib.Path) -> bool:
+    """Accept the fixed Caddy marker without following or blocking on unsafe files."""
+    marker = _rooted(root, CADDY_MANAGED_MARKER)
+    try:
+        descriptor = os.open(
+            marker,
+            os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+        )
+    except OSError:
+        return False
+
+    try:
+        before = os.fstat(descriptor)
+        if not _is_exact_caddy_marker(before):
+            return False
+        content = os.read(descriptor, len(CADDY_MANAGED_MARKER_CONTENT) + 1)
+        after = os.fstat(descriptor)
+        stable_fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_nlink",
+            "st_uid",
+            "st_gid",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+        )
+        return (
+            _is_exact_caddy_marker(after)
+            and all(getattr(before, field) == getattr(after, field) for field in stable_fields)
+            and content == CADDY_MANAGED_MARKER_CONTENT
+        )
+    except OSError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
 def validate_rocky_configuration(
     effective: Mapping[str, object],
     root: pathlib.Path = pathlib.Path("/"),
@@ -235,10 +295,14 @@ def validate_rocky_configuration(
     ]
     if not repositories:
         raise ValueError("DNF has no enabled distribution repository")
+    caddy_owns_epel = _caddy_owns_epel(root)
     for repository in repositories:
-        repository_id = str(repository.get("id", "")).lower()
-        if repository_id not in ROCKY_ALLOWED_REPOSITORIES:
-            raise ValueError("enabled DNF repository is not a Rocky distribution repository")
+        repository_id = str(repository.get("id", ""))
+        expected_key = ROCKY_REPOSITORY_KEYS.get(repository_id.lower())
+        if expected_key is None and caddy_owns_epel:
+            expected_key = CADDY_EPEL_REPOSITORY_KEYS.get(repository_id)
+        if expected_key is None:
+            raise ValueError("enabled DNF repository is not an approved repository")
         if repository.get("gpgcheck") is not True:
             raise ValueError("effective DNF repository package signature checking is disabled")
         repofile = str(repository.get("repofile", ""))
@@ -246,13 +310,13 @@ def validate_rocky_configuration(
             raise ValueError("enabled DNF repository is outside effective reposdir")
         keys = [str(value) for value in repository.get("gpgkey", [])]
         if not keys:
-            raise ValueError("enabled DNF repository has no Rocky distribution key")
+            raise ValueError("enabled DNF repository has no approved repository key")
         for key in keys:
             parsed = urllib.parse.urlparse(key)
-            if parsed.scheme != "file" or parsed.netloc or not ROCKY_KEY.fullmatch(parsed.path):
-                raise ValueError("enabled DNF repository uses a non-Rocky key")
+            if parsed.scheme != "file" or parsed.netloc or parsed.path != expected_key:
+                raise ValueError("enabled DNF repository does not use its approved key")
             if not _rooted(root, parsed.path).is_file():
-                raise ValueError("configured Rocky distribution key is absent")
+                raise ValueError("configured approved repository key is absent")
 
 
 def _collect_rocky_configuration() -> dict[str, object]:

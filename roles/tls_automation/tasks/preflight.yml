@@ -15,41 +15,123 @@
       - ansible_become_pass is not defined
     fail_msg: TLS automation requires a supported systemd host and key-only ansible administration
 
+- name: Resolve the installed Caddy certificate reader group
+  ansible.builtin.command:
+    argv: [/usr/bin/getent, group, caddy]
+  register: tls_automation_reader_group
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require the package-owned Caddy group
+  ansible.builtin.assert:
+    that:
+      - tls_automation_reader_group.stdout.split(':') | length == 4
+      - tls_automation_reader_group.stdout.split(':')[0] == 'caddy'
+      - tls_automation_reader_group.stdout.split(':')[2] | int > 0
+      - >-
+        tls_automation_reader_gid is none or
+        tls_automation_reader_gid == tls_automation_reader_group.stdout.split(':')[2] | int
+    fail_msg: Provision the shared Caddy service before TLS; its named group owns certificate read access
+  no_log: true
+
+- name: Record the resolved certificate reader group
+  ansible.builtin.set_fact:
+    tls_automation_caddy_gid: "{{ tls_automation_reader_group.stdout.split(':')[2] | int }}"
+  no_log: true
+
 - name: Assemble fixed TLS policy and issuer declaration
   ansible.builtin.set_fact:
-    tls_automation_policy:
-      namespace: "{{ tls_automation_namespace }}"
-      email: "{{ tls_automation_email }}"
-      reader_gid: "{{ tls_automation_reader_gid }}"
-      endpoints: "{{ tls_automation_endpoints }}"
+    tls_automation_proxy_declaration:
+      bind_addresses: "{{ reverse_proxy_bind_addresses | default([]) }}"
+      client_sources: "{{ reverse_proxy_client_sources | default([]) }}"
+      routes: "{{ reverse_proxy_routes | default([]) }}"
+      deferred_certificates: "{{ reverse_proxy_deferred_certificates | default([]) }}"
+    tls_automation_policy: >-
+      {{ {'bind_addresses': reverse_proxy_bind_addresses | default([]),
+          'client_sources': reverse_proxy_client_sources | default([]),
+          'routes': reverse_proxy_routes | default([]),
+          'deferred_certificates': reverse_proxy_deferred_certificates | default([])}
+         | tls_automation_proxy_policy(tls_automation_namespace,
+                                       tls_automation_email,
+                                       tls_automation_caddy_gid) }}
     tls_automation_issuer_account:
       name: svc-acme
       uid: "{{ tls_automation_issuer_uid }}"
       gid: "{{ tls_automation_issuer_gid }}"
+  no_log: true
 
 - name: Validate strict TLS inputs
   ansible.builtin.assert:
     that:
       - >-
-        tls_automation_policy ==
-        {'namespace': tls_automation_namespace, 'email': tls_automation_email,
-         'reader_gid': tls_automation_reader_gid, 'endpoints': tls_automation_endpoints}
-      - >-
         tls_automation_issuer_account ==
         {'name': 'svc-acme', 'uid': tls_automation_issuer_uid, 'gid': tls_automation_issuer_gid}
       - tls_automation_policy | tls_automation_validate_policy == tls_automation_policy
+      - >-
+        tls_automation_endpoints | length == 0 or
+        tls_automation_endpoints == tls_automation_policy.endpoints
       - tls_automation_issuer_uid is integer
       - tls_automation_issuer_uid is not boolean
       - tls_automation_issuer_gid is integer
       - tls_automation_issuer_gid is not boolean
-      - tls_automation_issuer_uid != tls_automation_reader_gid
-      - tls_automation_issuer_gid != tls_automation_reader_gid
+      - tls_automation_issuer_uid != tls_automation_caddy_gid
+      - tls_automation_issuer_gid != tls_automation_caddy_gid
       - tls_automation_timer_enabled is boolean
       - >-
         tls_automation_cloudflare_token is not defined or
         (tls_automation_cloudflare_token is string and tls_automation_cloudflare_token | length > 0)
       - not tls_automation_timer_enabled or tls_automation_cloudflare_token is defined
     fail_msg: TLS policy, identity, timer, or credential input is invalid
+  no_log: true
+
+- name: Inspect required installed Caddy integration boundaries
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop:
+    - {path: /usr/local/libexec/homelab-reverse-proxy, mode: '0755'}
+    - {path: /usr/local/lib/homelab-reverse-proxy/proxy_config.py, mode: '0644'}
+    - {path: /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py, mode: '0644'}
+    - {path: /var/lib/homelab-reverse-proxy/desired.json, mode: '0600'}
+    - {path: /run/lock/homelab-reverse-proxy.lock, mode: '0600'}
+  register: tls_automation_proxy_boundaries
+
+- name: Require provisioned root-owned Caddy integration
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.gid | default(-1) == 0
+      - item.stat.nlink | default(0) == 1
+      - item.stat.mode | default('') == item.item.mode
+      - >-
+        item.item.path != '/var/lib/homelab-reverse-proxy/desired.json' or
+        0 < item.stat.size | default(0) <= 1048576
+    fail_msg: Provision the shared Caddy service and desired manifest before installing TLS
+  loop: "{{ tls_automation_proxy_boundaries.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Read the committed Caddy declaration before TLS mutation
+  ansible.builtin.slurp:
+    src: /var/lib/homelab-reverse-proxy/desired.json
+  register: tls_automation_committed_proxy
+  no_log: true
+
+- name: Bind TLS policy to the committed Caddy routes and verified ingress
+  ansible.builtin.set_fact:
+    tls_automation_policy: >-
+      {{ tls_automation_committed_proxy.content | b64decode
+         | tls_automation_committed_proxy_policy(tls_automation_proxy_declaration,
+                                                 tls_automation_namespace,
+                                                 tls_automation_email,
+                                                 tls_automation_caddy_gid) }}
   no_log: true
 
 - name: Read effective host users before mutation
@@ -82,20 +164,6 @@
   check_mode: false
   no_log: true
 
-- name: Require the declared reader group
-  ansible.builtin.command:
-    argv: [/usr/bin/getent, group, "{{ tls_automation_reader_gid }}"]
-  register: tls_automation_reader_group
-  changed_when: false
-  check_mode: false
-
-- name: Verify the declared reader group ID
-  ansible.builtin.assert:
-    that:
-      - tls_automation_reader_group.stdout.split(':') | length == 4
-      - tls_automation_reader_group.stdout.split(':')[2] | int == tls_automation_reader_gid
-    fail_msg: The declared TLS reader GID must already exist
-
 - name: Inspect trusted TLS ancestor directories
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -105,6 +173,8 @@
     get_attributes: false
   loop:
     - /etc
+    - /etc/caddy
+    - /etc/caddy/tls
     - /etc/systemd
     - /etc/systemd/system
     - /usr
@@ -148,11 +218,13 @@
     - {path: /usr/local/lib/homelab-tls/tls_runtime/policy.py, type: file, owner: 0}
     - {path: /usr/local/lib/homelab-tls/tls_runtime/publication.py, type: file, owner: 0}
     - {path: /usr/local/lib/homelab-tls/tls_runtime/runtime.py, type: file, owner: 0}
+    - {path: /usr/local/lib/homelab-tls/tls_runtime/caddy.py, type: file, owner: 0}
     - {path: /usr/local/libexec, type: directory, owner: 0}
     - {path: /usr/local/libexec/lego-5.4.1, type: file, owner: 0}
     - {path: /usr/local/libexec/homelab-tls-issue, type: file, owner: 0}
     - {path: /usr/local/libexec/homelab-tls-reconcile, type: file, owner: 0}
     - {path: /usr/local/libexec/homelab-tls-verify, type: file, owner: 0}
+    - {path: /usr/local/libexec/homelab-tls-caddy, type: file, owner: 0}
     - {path: /var/cache/homelab-tls, type: directory, owner: 0}
     - path: >-
         /var/cache/homelab-tls/lego_v5.4.1_linux_{{
@@ -172,7 +244,8 @@
     - {path: /var/lib/homelab-tls, type: directory, owner: 0}
     - {path: /var/lib/homelab-tls/private, type: directory, owner: 0}
     - {path: /var/lib/homelab-tls/private/coordinator.lock, type: file, owner: 0}
-    - {path: /var/lib/homelab-tls/published, type: directory, owner: 0}
+    - {path: /etc/caddy/tls/infra, type: directory, owner: 0}
+    - {path: /etc/caddy/tls/.homelab-tls-private, type: directory, owner: 0}
     - {path: /var/lib/homelab-tls-issuer, type: directory, owner: "{{ tls_automation_issuer_uid }}"}
     - {path: /etc/systemd/system/homelab-tls-issuer.service, type: file, owner: 0}
     - {path: /etc/systemd/system/homelab-tls-renew.service, type: file, owner: 0}
@@ -206,6 +279,51 @@
   loop: "{{ tls_automation_managed_paths.results }}"
   loop_control:
     label: "{{ item.item.path }}"
+
+- name: Inspect the previous publication directory
+  ansible.builtin.stat:
+    path: /var/lib/homelab-tls/published
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: tls_automation_old_root
+
+- name: Reject an unsafe previous publication directory
+  ansible.builtin.assert:
+    that:
+      - not tls_automation_old_root.stat.islnk | default(false)
+      - not tls_automation_old_root.stat.exists or tls_automation_old_root.stat.isdir
+      - not tls_automation_old_root.stat.exists or tls_automation_old_root.stat.uid == 0
+    fail_msg: The previous TLS publication path has unsafe metadata
+
+- name: Inspect the previous publication layout
+  ansible.builtin.find:
+    paths: /var/lib/homelab-tls/published
+    file_type: any
+    hidden: true
+    recurse: false
+  register: tls_automation_old_publication
+  when: tls_automation_old_root.stat.exists
+  no_log: true
+
+- name: Inspect the previous publication journal
+  ansible.builtin.stat:
+    path: /var/lib/homelab-tls/private/transaction.json
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: tls_automation_old_journal
+
+- name: Require explicit migration of previously published certificates
+  ansible.builtin.assert:
+    that:
+      - tls_automation_old_publication.matched | default(0) == 0
+      - not tls_automation_old_journal.stat.exists
+      - not tls_automation_old_journal.stat.islnk | default(false)
+    fail_msg: Existing TLS publication requires operator migration before installing the Caddy integration
+  no_log: true
 
 - name: Inspect the systemd typed property client before mutation
   ansible.builtin.stat:

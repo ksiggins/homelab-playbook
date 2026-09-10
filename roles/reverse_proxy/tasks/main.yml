@@ -34,18 +34,39 @@
     os_baseline_verify_expected_firewall_services: >-
       {{ reverse_proxy_expected_firewall_services }}
 
-- name: Render candidate reverse proxy configuration
-  ansible.builtin.template:
-    src: Caddyfile.j2
-    dest: /etc/caddy/Caddyfile.candidate
-    owner: root
-    group: caddy
-    mode: '0640'
+- name: Serialize the declared reverse proxy manifest
+  ansible.builtin.set_fact:
+    reverse_proxy_manifest_bytes: >-
+      {{ reverse_proxy_config | to_json(sort_keys=true) }}
   no_log: true
+
+- name: Install candidate desired reverse proxy manifest
+  ansible.builtin.copy:
+    content: "{{ reverse_proxy_manifest_bytes }}"
+    dest: /var/lib/homelab-reverse-proxy/desired.candidate.json
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Bind the candidate to the verified ingress policy
+  ansible.builtin.copy:
+    content: >-
+      {{ {'version': 1,
+          'manifest_sha256': reverse_proxy_manifest_bytes | hash('sha256'),
+          'listen_addresses': reverse_proxy_config.bind_addresses,
+          'https_client_networks': reverse_proxy_config.client_sources} | to_nice_json }}
+    dest: /var/lib/homelab-reverse-proxy/ingress.candidate.json
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
 
 - name: Activate candidate reverse proxy configuration
   ansible.builtin.command:
-    argv: [/usr/local/libexec/homelab-reverse-proxy, apply]
+    argv: [/usr/local/libexec/homelab-reverse-proxy, apply-desired]
   register: reverse_proxy_activation
   changed_when: reverse_proxy_activation.stdout | trim == 'changed'
   no_log: true

@@ -140,6 +140,22 @@ The [OS playbook README](../../playbooks/os/README.md) describes the subsystem.
 The [managed host onboarding guide](../guides/managed-host-onboarding.md)
 documents the exact operator interface and safeguards.
 
+### Host TLS and proxy operations
+
+The host Caddy helpers are internal operations, not alternate operator gateways.
+`homelab-reverse-proxy apply-desired` reconciles the declared configuration and
+its verified ingress binding; `reload` reopens selected certificates; `recover`
+restores interrupted disk state before service startup. These are mutating
+operations under an authorized provisioning, renewal, or service lifecycle.
+`verify` observes state. The fixed TLS adapter's `validate` prepares and checks
+a candidate without activating it; `reload` and `deactivate` mutate the managed
+routes and verify the result. The issuer cannot choose these operations or their
+paths. Operators continue to use `mise run playbook` with the applicable target
+authorization; invoking an internal helper does not supply new authority.
+`homelab-reverse-proxy install-trust` creates immutable device trust bundles from
+the fixed root-owned candidate under the deployment lock. It checks an existing
+name for exact contents and metadata and never replaces it.
+
 ### Dependency bootstrap
 
 ```text

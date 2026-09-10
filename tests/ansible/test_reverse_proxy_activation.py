@@ -865,3 +865,21 @@ class CommandBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CandidateGenerationTests(ActivationFixture):
+    configure_certificate = CertificateTests.configure_certificate
+
+    def test_generation_override_requires_explicit_internal_authority(self):
+        base, version = self.configure_certificate()
+        base.rename(base.with_name('infra'))
+        base = base.with_name('infra')
+        generation = base / ('generation-' + '1' * 32)
+        (base / version.name).rename(generation)
+        configuration = json.loads(self.candidate.read_bytes())
+        pair = configuration['apps']['tls']['certificates']['load_files'][0]
+        pair['certificate'] = '/etc/caddy/tls/infra/' + generation.name + '/fullchain.pem'
+        pair['key'] = '/etc/caddy/tls/infra/' + generation.name + '/privkey.pem'
+        with self.assertRaises(self.module.ActivationError):
+            self.activation.certificates(configuration)
+        fingerprints = self.activation.certificates(configuration, certificate_generation=generation)
+        self.assertEqual({'app.example.test': {hashlib.sha256(b'synthetic DER').hexdigest()}}, fingerprints)

@@ -1,0 +1,19 @@
+---
+- name: Discover the disposable TLS listener without optional network tools
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import ipaddress, socket;
+        values={entry[4][0] for entry in
+        socket.getaddrinfo(socket.gethostname(), 0, socket.AF_INET)};
+        print(next(value for value in sorted(values)
+        if ipaddress.ip_address(value).is_private
+        and not ipaddress.ip_address(value).is_loopback))
+  register: system_maintenance_molecule_tls_address_result
+  changed_when: false
+
+- name: Record the disposable TLS listener
+  ansible.builtin.set_fact:
+    system_maintenance_molecule_tls_address: "{{ system_maintenance_molecule_tls_address_result.stdout | trim }}"

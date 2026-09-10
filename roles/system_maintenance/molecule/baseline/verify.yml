@@ -3,6 +3,10 @@
   hosts: os_managed
   gather_facts: true
   become: true
+  pre_tasks:
+    - name: Load proxy declarations for all standalone verification plays
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/vars/tls.yml"
   vars:
     system_maintenance_molecule_baseline_expected_authorized_key: >-
       {{ lookup(
@@ -250,7 +254,7 @@
                  system_maintenance_molecule_baseline_direct_firewall.results,
                  system_maintenance_molecule_baseline_firewall_bindings.stdout,
                  system_maintenance_molecule_baseline_firewall_policies.stdout,
-                 ansible_facts['os_family']) }}
+                 ansible_facts['os_family'], reverse_proxy_client_sources) }}
       ansible.builtin.assert:
         that:
           - system_maintenance_molecule_baseline_firewall_problems | length == 0
@@ -357,11 +361,12 @@
         that:
           - system_maintenance_molecule_baseline_updater_problems | length == 0
 
-    - name: Verify the minimum package set and excluded ownership
+    - name: Verify baseline packages and the Caddy package source
       ansible.builtin.assert:
         that:
           - system_maintenance_molecule_baseline_minimum_packages[ansible_facts['os_family']] | difference(ansible_facts.packages.keys()) | length == 0
-          - "'epel-release' not in ansible_facts.packages"
+          - "'caddy' in ansible_facts.packages"
+          - "('epel-release' in ansible_facts.packages) == (ansible_facts['os_family'] == 'RedHat')"
           - "'fail2ban' not in ansible_facts.packages"
 
     - name: Inspect recurring full update timer and cron artifacts
@@ -520,6 +525,19 @@
   vars_files:
     - vars/tls.yml
   tasks:
+    - name: Discover the independently observed disposable TLS address
+      ansible.builtin.include_tasks: tasks/tls-address.yml
+
+    - name: Read the installed Caddy certificate reader group
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, group, caddy]
+      register: system_maintenance_molecule_caddy_group
+      changed_when: false
+
+    - name: Record the installed Caddy certificate reader ID
+      ansible.builtin.set_fact:
+        system_maintenance_molecule_caddy_gid: "{{ system_maintenance_molecule_caddy_group.stdout.split(':')[2] | int }}"
+
     - name: Gather installed package evidence
       ansible.builtin.package_facts:
         manager: auto
@@ -576,10 +594,11 @@
         - {path: /etc/homelab-tls, mode: '0750', uid: 0, gid: 2010, type: directory}
         - {path: /etc/homelab-tls/config.json, mode: '0640', uid: 0, gid: 2010, type: file}
         - {path: /etc/homelab-tls/.issuer-account.json, mode: '0644', uid: 0, gid: 0, type: file}
-        - {path: /var/lib/homelab-tls, mode: '0750', uid: 0, gid: 2001, type: directory}
+        - {path: /var/lib/homelab-tls, mode: '0750', uid: 0, gid: "{{ system_maintenance_molecule_caddy_gid }}", type: directory}
         - {path: /var/lib/homelab-tls/private, mode: '0700', uid: 0, gid: 0, type: directory}
         - {path: /var/lib/homelab-tls/private/coordinator.lock, mode: '0600', uid: 0, gid: 0, type: file}
-        - {path: /var/lib/homelab-tls/published, mode: '0750', uid: 0, gid: 2001, type: directory}
+        - {path: /etc/caddy/tls/infra, mode: '0750', uid: 0, gid: "{{ system_maintenance_molecule_caddy_gid }}", type: directory}
+        - {path: /etc/caddy/tls/.homelab-tls-private, mode: '0700', uid: 0, gid: 0, type: directory}
         - {path: /var/lib/homelab-tls-issuer, mode: '0700', uid: 2010, gid: 2010, type: directory}
         - {path: /usr/local/lib/homelab-tls, mode: '0755', uid: 0, gid: 0, type: directory}
         - {path: /usr/local/lib/homelab-tls/tls_runtime, mode: '0755', uid: 0, gid: 0, type: directory}
@@ -589,9 +608,11 @@
         - {path: /usr/local/lib/homelab-tls/tls_runtime/publication.py, mode: '0644', uid: 0, gid: 0, type: file}
         - {path: /usr/local/lib/homelab-tls/tls_runtime/unit_contract.py, mode: '0644', uid: 0, gid: 0, type: file}
         - {path: /usr/local/lib/homelab-tls/tls_runtime/runtime.py, mode: '0644', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/lib/homelab-tls/tls_runtime/caddy.py, mode: '0644', uid: 0, gid: 0, type: file}
         - {path: /usr/local/libexec/homelab-tls-issue, mode: '0755', uid: 0, gid: 0, type: file}
         - {path: /usr/local/libexec/homelab-tls-reconcile, mode: '0755', uid: 0, gid: 0, type: file}
         - {path: /usr/local/libexec/homelab-tls-verify, mode: '0755', uid: 0, gid: 0, type: file}
+        - {path: /usr/local/libexec/homelab-tls-caddy, mode: '0755', uid: 0, gid: 0, type: file}
         - {path: /usr/local/libexec/lego-5.4.1, mode: '0755', uid: 0, gid: 0, type: file}
         - {path: /etc/systemd/system/homelab-tls-issuer.service, mode: '0644', uid: 0, gid: 0, type: file}
         - {path: /etc/systemd/system/homelab-tls-renew.service, mode: '0644', uid: 0, gid: 0, type: file}
@@ -613,7 +634,7 @@
       loop_control:
         label: "{{ item.item.path }}"
 
-    - name: Inspect omitted credential and unavailable adapter
+    - name: Inspect omitted credential
       ansible.builtin.stat:
         path: "{{ item }}"
         follow: false
@@ -622,7 +643,6 @@
         get_attributes: false
       loop:
         - /etc/homelab-tls/cloudflare-token
-        - /usr/local/libexec/homelab-tls-caddy
       register: system_maintenance_molecule_tls_absent_inputs
 
     - name: Verify omitted private input remains absent
@@ -645,8 +665,10 @@
         that:
           - >-
             system_maintenance_molecule_tls_policy.content | b64decode | from_json ==
-            {'namespace': 'infra.example.com', 'email': 'acme@example.com', 'reader_gid': 2001,
-             'endpoints': [{'hostname': 'modem.infra.example.com', 'address': '192.0.2.10', 'port': 443}]}
+            {'namespace': 'infra.example.com', 'email': 'acme@example.com',
+             'reader_gid': system_maintenance_molecule_caddy_gid,
+             'endpoints': [{'hostname': 'modem.infra.example.com',
+                            'address': system_maintenance_molecule_tls_address, 'port': 443}]}
           - >-
             system_maintenance_molecule_tls_marker.content | b64decode | from_json ==
             {'name': 'svc-acme', 'uid': 2010, 'gid': 2010}
@@ -775,7 +797,9 @@
           - "'NoNewPrivileges=yes' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
           - "'ProtectSystem=strict' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
           - "'PrivateTmp=yes' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
-          - "'ReadWritePaths=/var/lib/homelab-tls' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
+          - >-
+            'ReadWritePaths=/var/lib/homelab-tls /etc/caddy /var/lib/homelab-reverse-proxy'
+            in system_maintenance_molecule_tls_services.results[1].stdout_lines
           - "'FragmentPath=/etc/systemd/system/homelab-tls-renew.service' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
           - "'DropInPaths=' in system_maintenance_molecule_tls_services.results[1].stdout_lines"
 
@@ -1029,20 +1053,20 @@
       changed_when: false
       failed_when: false
 
-    - name: Read issuer state before unavailable-adapter preflight
+    - name: Read issuer state before missing-credential preflight
       ansible.builtin.command:
         argv: [/usr/bin/systemctl, show, homelab-tls-issuer.service, --property=ActiveState, --value]
       register: system_maintenance_molecule_tls_issuer_before
       changed_when: false
 
-    - name: Exercise runtime preflight without an adapter or credential
+    - name: Exercise runtime preflight without a credential
       ansible.builtin.command:
         argv: [/usr/local/libexec/homelab-tls-reconcile]
       register: system_maintenance_molecule_tls_preflight
       changed_when: false
       failed_when: false
 
-    - name: Read issuer state after unavailable-adapter preflight
+    - name: Read issuer state after missing-credential preflight
       ansible.builtin.command:
         argv: [/usr/bin/systemctl, show, homelab-tls-issuer.service, --property=ActiveState, --value]
       register: system_maintenance_molecule_tls_issuer_after
@@ -1080,7 +1104,10 @@
             mode: '0755'
           loop:
             - tests/tls
+            - tests/ansible
             - roles/tls_automation/files
+            - roles/reverse_proxy/files
+            - roles/reverse_proxy/filter_plugins
 
         - name: Link the installed runtime into the disposable test tree
           ansible.builtin.file:
@@ -1093,6 +1120,28 @@
             src: "{{ playbook_dir }}/../../../../tests/tls/"
             dest: "{{ system_maintenance_molecule_tls_test_root.path }}/tests/tls/"
             mode: preserve
+
+        - name: Link installed proxy modules into the disposable test tree
+          ansible.builtin.file:
+            src: "{{ item.source }}"
+            dest: "{{ system_maintenance_molecule_tls_test_root.path }}/{{ item.destination }}"
+            state: link
+          loop:
+            - source: /usr/local/libexec/homelab-reverse-proxy
+              destination: roles/reverse_proxy/files/activate.py
+            - source: /usr/local/lib/homelab-reverse-proxy/proxy_manifest.py
+              destination: roles/reverse_proxy/files/manifest.py
+            - source: /usr/local/lib/homelab-reverse-proxy/proxy_config.py
+              destination: roles/reverse_proxy/filter_plugins/proxy.py
+
+        - name: Copy the bounded proxy fixtures used by TLS integration tests
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../../../../tests/ansible/{{ item }}"
+            dest: "{{ system_maintenance_molecule_tls_test_root.path }}/tests/ansible/{{ item }}"
+            mode: '0644'
+          loop:
+            - test_reverse_proxy_activation.py
+            - test_proxy_manifest_runtime.py
 
         - name: Run TLS tests with distribution Python and cryptography
           ansible.builtin.command:

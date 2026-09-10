@@ -25,10 +25,23 @@
       {{ {
            'bind_addresses': reverse_proxy_bind_addresses,
            'client_sources': reverse_proxy_client_sources,
-           'routes': reverse_proxy_routes
+           'routes': reverse_proxy_routes,
+           'deferred_certificates': reverse_proxy_deferred_certificates
          } | reverse_proxy_validate }}
     reverse_proxy_expected_management_sources: >-
       {{ security_baseline_management_sources | default([]) }}
     reverse_proxy_expected_firewall_services: >-
       {{ security_baseline_firewall_services | default([]) }}
+  no_log: true
+
+- name: Require explicitly named device trust material
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_trust_certificates is mapping
+      - item.key is string
+      - item.key is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+      - item.value is string
+      - item.value | length > 0
+    fail_msg: Device trust inputs require safe names and explicit certificate content
+  loop: "{{ reverse_proxy_trust_certificates | dict2items }}"
   no_log: true

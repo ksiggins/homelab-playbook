@@ -192,6 +192,10 @@
         follow: false
         force: true
 
+    - name: Exercise the installed TLS and Caddy integration before repeat provisioning
+      ansible.builtin.include_tasks: tasks/tls-integration.yml
+      when: reverse_proxy_molecule_first_activation
+
     - name: Apply and diagnose the valid two-route configuration
       block:
         - name: Apply the two-route reverse proxy configuration  # noqa: var-naming[no-role-prefix]

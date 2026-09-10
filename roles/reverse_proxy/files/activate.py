@@ -118,6 +118,23 @@ class Activator:
         self.previous = self.state / "last-good"
         self.lock_path = self.path("/run/lock/homelab-reverse-proxy.lock")
         self.socket = self.path("/run/caddy/admin.sock")
+        self.tls_journal = self.config_dir / "tls/.homelab-tls-private/transaction.json"
+
+    def manifest(self):
+        sys.path.insert(0, "/usr/local/lib/homelab-reverse-proxy")
+        from proxy_manifest import Manifest
+        return Manifest(self)
+
+    def install_trust(self):
+        with self.locked():
+            self.require_no_tls()
+            self.manifest()  # Establish the fixed installed module search path.
+            from proxy_manifest import Trust
+            return Trust(self).install()
+
+    def require_no_tls(self):
+        if os.path.lexists(self.tls_journal):
+            raise ActivationError("TLS publication recovery is pending")
 
     def path(self, value):
         return self.root / value.lstrip("/")
@@ -179,7 +196,7 @@ class Activator:
                 operation = fcntl.LOCK_EX | fcntl.LOCK_NB
             fcntl.flock(descriptor, operation)
             self.preflight()
-            yield
+            yield descriptor
         finally:
             if not inherited:
                 os.close(descriptor)
@@ -306,14 +323,14 @@ class Activator:
         if observed != self.expected_listeners(configuration):
             raise ActivationError("Caddy network listeners differ from the declared listeners")
 
-    def validate(self, config):
+    def validate(self, config, certificate_generation=None):
         self.metadata(config, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
         adapted = self.adapted(config)
-        self.certificates(adapted)
+        self.certificates(adapted, certificate_generation=certificate_generation)
         self.caddy("validate", config)
         return adapted
 
-    def certificates(self, configuration):
+    def certificates(self, configuration, certificate_generation=None):
         certificates = configuration.get("apps", {}).get("tls", {}).get("certificates", {}).get("load_files", [])
         def route_hosts(value):
             result = set()
@@ -358,29 +375,36 @@ class Activator:
         for pair in certificates:
             certificate = pair.get("certificate", "")
             key = pair.get("key", "")
-            match = re.fullmatch(r"/etc/caddy/tls/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/current/fullchain\.pem", certificate)
+            match = re.fullmatch(r"/etc/caddy/tls/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/(current|generation-[0-9a-f]{32})/fullchain\.pem", certificate)
             if match is None or key != certificate.removesuffix("fullchain.pem") + "privkey.pem":
                 raise ActivationError("external TLS paths do not meet the certificate contract")
             base = self.config_dir / "tls" / match.group(1)
-            self.metadata(base, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
-            current = base / "current"
-            info = current.lstat()
-            if not stat.S_ISLNK(info.st_mode) or info.st_uid != self.ids[0] or info.st_gid != self.ids[3]:
-                raise ActivationError("certificate version selection is not an administrator-owned symlink")
-            target = current.resolve(strict=True)
-            if base not in target.parents:
-                raise ActivationError("certificate version escapes its managed root")
-            # Only the current pointer may introduce path indirection.
-            relative = Path(os.readlink(current))
-            raw = relative if relative.is_absolute() else base / relative
-            if ".." in raw.parts:
-                raise ActivationError("certificate version path contains traversal")
-            cursor = base
-            for component in target.relative_to(base).parts:
-                cursor /= component
-                self.metadata(cursor, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
-            if raw != target:
-                raise ActivationError("certificate version has additional path indirection")
+            if match.group(2) != "current":
+                target = base / match.group(2)
+                if match.group(1) != "infra" or target != certificate_generation:
+                    raise ActivationError("candidate generation requires internal validation authority")
+                self.metadata(base, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
+                self.metadata(target, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
+            else:
+                self.metadata(base, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
+                current = base / "current"
+                info = current.lstat()
+                if not stat.S_ISLNK(info.st_mode) or info.st_uid != self.ids[0] or info.st_gid != self.ids[3]:
+                    raise ActivationError("certificate version selection is not an administrator-owned symlink")
+                target = current.resolve(strict=True)
+                if base not in target.parents:
+                    raise ActivationError("certificate version escapes its managed root")
+                # Only the current pointer may introduce path indirection.
+                relative = Path(os.readlink(current))
+                raw = relative if relative.is_absolute() else base / relative
+                if ".." in raw.parts:
+                    raise ActivationError("certificate version path contains traversal")
+                cursor = base
+                for component in target.relative_to(base).parts:
+                    cursor /= component
+                    self.metadata(cursor, stat.S_ISDIR, self.ids[0], self.ids[3], 0o750)
+                if raw != target:
+                    raise ActivationError("certificate version has additional path indirection")
             for filename in ("fullchain.pem", "privkey.pem"):
                 self.metadata(target / filename, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
             public = str(target / "fullchain.pem")
@@ -446,6 +470,15 @@ class Activator:
                     # the active configuration. Reload cannot close those sockets.
                     raise RestartRequired(previous) from None
 
+    def restore_manifest(self, manifests, previous):
+        if previous is None:
+            if os.path.lexists(manifests.path):
+                manifests.path.unlink()
+                self.fsync_directory(self.state)
+        else:
+            manifests.validate(json.loads(previous))
+            self.durable_write(manifests.path, previous.encode(), 0o600, self.ids[1])
+
     def recover_pending(self, runtime=False):
         if not self.pending.exists():
             if self.pending.is_symlink():
@@ -458,22 +491,47 @@ class Activator:
         except ValueError:
             raise ActivationError("transaction record is unreadable; operator recovery is required") from None
         previous = self.previous.read_bytes()
-        if (not isinstance(record, dict) or set(record) != {"previous", "candidate"}
+        fields = {"previous", "candidate"}
+        manifest_fields = {"desired_previous", "desired_candidate"}
+        if (not isinstance(record, dict) or set(record) not in (fields, fields | manifest_fields)
                 or hashlib.sha256(previous).hexdigest() != record["previous"]
                 or hashlib.sha256(self.boot.read_bytes()).hexdigest() not in (record["previous"], record["candidate"])):
             raise ActivationError("transaction state is ambiguous; operator recovery is required")
+        if "desired_previous" in record:
+            manifests = self.manifest()
+            current = manifests.read(manifests.path).decode("utf-8") if os.path.lexists(manifests.path) else None
+            if current not in (record["desired_previous"], record["desired_candidate"]):
+                raise ActivationError("desired authority changed during recovery")
+            for value in (record["desired_previous"], record["desired_candidate"]):
+                if value is not None:
+                    manifests.validate(json.loads(value))
+            self.restore_manifest(manifests, record["desired_previous"])
         self.restore_previous(previous, runtime)
         self.clear_pending()
 
     def recover(self):
         with self.locked():
+            if os.path.lexists(self.tls_journal):
+                sys.path.insert(0, "/usr/local/lib/homelab-tls")
+                from tls_runtime.caddy import Integration
+                Integration(self).recover_disk()
             self.recover_pending()
 
-    def apply(self):
+    def apply(self, desired=False):
         try:
             with self.locked():
                 try:
-                    return self.apply_locked()
+                    self.require_no_tls()
+                    manifests = self.manifest() if desired else None
+                    if not desired and os.path.lexists(self.state / "desired.json"):
+                        raise ActivationError("managed desired routes require apply-desired")
+                    if manifests is not None:
+                        self.recover_pending(runtime=True)
+                        envelope, config = manifests.candidate()
+                        self.durable_write(self.candidate, manifests.render(config).encode(), 0o640, self.ids[3])
+                    else:
+                        envelope = None
+                    return self.apply_locked(manifests, envelope)
                 except RestartRequired as recovery:
                     # Keep rollback authority durable while releasing the lock.
                     # Usually the original transaction marker is still present.
@@ -502,7 +560,7 @@ class Activator:
             raise ActivationError("activation failed: " + recovery.reason
                                   + "; previous boot and runtime configuration restored after service restart") from None
 
-    def apply_locked(self):
+    def apply_locked(self, manifests=None, envelope=None):
         self.active()
         self.recover_pending(runtime=True)
         self.metadata(self.candidate, stat.S_ISREG, self.ids[0], self.ids[3], 0o640)
@@ -512,27 +570,44 @@ class Activator:
         if self.candidate.read_bytes() != candidate:
             raise ActivationError("candidate changed during validation; rerun provisioning")
         previous = self.boot.read_bytes()
+        previous_desired = None
+        candidate_desired = None
+        if manifests is not None:
+            manifests.unchanged(envelope)
+            previous_desired = manifests.read(manifests.path).decode() if os.path.lexists(manifests.path) else None
+            if previous_desired is not None:
+                manifests.validate(json.loads(previous_desired))
+            candidate_desired = json.dumps(envelope, sort_keys=True)
+        observed_unchanged = False
         if candidate == previous:
             try:
                 self.observed(desired)
                 self.served_tls(desired)
-                return "unchanged"
+                observed_unchanged = True
+                if candidate_desired == previous_desired:
+                    return "unchanged"
             except ActivationError:
                 pass
         self.active()
         self.socket_metadata()
         # The backup and marker are both durable before changing the boot file.
         self.durable_write(self.previous, previous, 0o600, self.ids[1])
-        record = json.dumps({"previous": hashlib.sha256(previous).hexdigest(),
-                             "candidate": hashlib.sha256(candidate).hexdigest()}).encode()
-        self.durable_write(self.pending, record, 0o600, self.ids[1])
+        record = {"previous": hashlib.sha256(previous).hexdigest(),
+                  "candidate": hashlib.sha256(candidate).hexdigest()}
+        if manifests is not None:
+            record.update(desired_previous=previous_desired, desired_candidate=candidate_desired)
+        self.durable_write(self.pending, json.dumps(record).encode(), 0o600, self.ids[1])
         try:
             self.durable_write(self.boot, candidate, 0o640, self.ids[3])
-            self.caddy("reload", self.boot)
-            self.observed(desired)
-            self.served_tls(desired)
+            if not observed_unchanged:
+                self.caddy("reload", self.boot)
+                self.observed(desired)
+                self.served_tls(desired)
+            if manifests is not None:
+                manifests.unchanged(envelope)
+                self.durable_write(manifests.path, candidate_desired.encode(), 0o600, self.ids[1])
             self.clear_pending()
-        except (ActivationError, OSError) as failure:
+        except (ActivationError, OSError, ValueError) as failure:
             reason = str(failure) if isinstance(failure, ActivationError) else "managed filesystem operation failed"
             try:
                 if self.pending.exists() or self.pending.is_symlink():
@@ -540,6 +615,8 @@ class Activator:
                 else:
                     # Cleanup may have removed the marker before a failed fsync.
                     # Retain the in-memory rollback authority until commit returns.
+                    if manifests is not None:
+                        self.restore_manifest(manifests, previous_desired)
                     self.restore_previous(previous, runtime=True)
                     self.fsync_directory(self.state)
             except RestartRequired as recovery:
@@ -552,6 +629,7 @@ class Activator:
 
     def reload(self, inherited=False):
         with self.locked(inherited=inherited):
+            self.require_no_tls()
             self.active()
             if self.pending.exists() or self.pending.is_symlink():
                 raise ActivationError("configuration recovery is required before certificate refresh")
@@ -562,6 +640,12 @@ class Activator:
 
     def verify(self, inherited=False):
         with self.locked(shared=True, inherited=inherited):
+            self.require_no_tls()
+            if os.path.lexists(self.state / "desired.json"):
+                manifests = self.manifest()
+                unused, config = manifests.committed()
+                if self.boot.read_bytes() != manifests.render(config).encode():
+                    raise ActivationError("boot configuration differs from desired effective routes")
             if self.pending.exists() or self.pending.is_symlink():
                 raise ActivationError("configuration recovery is pending")
             desired = self.adapted(self.boot)
@@ -572,8 +656,8 @@ class Activator:
 
 def main(arguments=None):
     args = list(sys.argv[1:] if arguments is None else arguments)
-    if args not in (["apply"], ["recover"], ["reload"], ["reload", "--lock-held"], ["verify"], ["verify", "--lock-held"]):
-        print("usage: homelab-reverse-proxy {apply|recover|reload [--lock-held]|verify [--lock-held]}", file=sys.stderr)
+    if args not in (["install-trust"], ["apply-desired"], ["apply"], ["recover"], ["reload"], ["reload", "--lock-held"], ["verify"], ["verify", "--lock-held"]):
+        print("usage: homelab-reverse-proxy {apply|apply-desired|install-trust|recover|reload [--lock-held]|verify [--lock-held]}", file=sys.stderr)
         return 2
     try:
         if os.geteuid() != 0:
@@ -582,8 +666,13 @@ def main(arguments=None):
         if args[0] in ("reload", "verify"):
             getattr(activator, args[0])(inherited=len(args) == 2)
         else:
-            result = getattr(activator, args[0])()
-            if args[0] == "apply":
+            if args[0] == "apply-desired":
+                result = activator.apply(desired=True)
+            elif args[0] == "install-trust":
+                result = activator.install_trust()
+            else:
+                result = getattr(activator, args[0])()
+            if args[0] in ("apply", "apply-desired", "install-trust"):
                 print(result)
         return 0
     except ActivationError as error:

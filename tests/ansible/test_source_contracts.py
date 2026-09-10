@@ -1820,9 +1820,11 @@ class SourceContractTests(unittest.TestCase):
             self.assertIn("fields[2]", source)
             self.assertIn("fields[3]", source)
 
-        converge = load_yaml_documents(
+        converge_plays = load_yaml_documents(
             "roles/system_maintenance/molecule/baseline/converge.yml"
-        )[0][1]
+        )[0]
+        converge = next(play for play in converge_plays
+                        if "ansible.builtin.import_playbook" in play)
         self.assertEqual(
             {
                 "host": "127.0.0.1",

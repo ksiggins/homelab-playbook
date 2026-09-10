@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -293,11 +294,130 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
             ],
         }
 
+    def add_epel_fixture(
+        self,
+        root: Path,
+        effective: dict[str, object],
+    ) -> Path:
+        marker = root / "var/lib/homelab-reverse-proxy/managed"
+        marker.parent.mkdir(parents=True)
+        marker.write_text("managed by homelab-playbook\n", encoding="utf-8")
+        marker.chmod(0o600)
+        key = root / "etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9"
+        key.touch()
+        repo_dir = root / "etc/dnf/authoritative.repos.d"
+        repositories = effective["repos"]
+        assert isinstance(repositories, list)
+        for repository_id, filename in (
+            ("epel", "epel.repo"),
+            ("epel-cisco-openh264", "epel-cisco-openh264.repo"),
+        ):
+            repo_file = repo_dir / filename
+            repo_file.touch()
+            repositories.append(
+                {
+                    "id": repository_id,
+                    "enabled": True,
+                    "gpgcheck": True,
+                    "gpgkey": ["file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9"],
+                    "repofile": f"/etc/dnf/authoritative.repos.d/{filename}",
+                }
+            )
+        return marker
+
+    def marker_identity(self, uid: int = 0, gid: int = 0):
+        real_fstat = os.fstat
+
+        def identified(descriptor: int):
+            observed = real_fstat(descriptor)
+            fields = list(observed)
+            fields[4] = uid
+            fields[5] = gid
+            return os.stat_result(fields)
+
+        return mock.patch.object(os, "fstat", side_effect=identified)
+
     def test_rocky_accepts_effective_distribution_repository_policy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             effective = self.rocky_fixture(root)
             self.repository_trust.validate_rocky_configuration(effective, root)
+
+    def test_rocky_accepts_exact_role_owned_epel_repositories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            effective = self.rocky_fixture(root)
+            self.add_epel_fixture(root, effective)
+            with self.marker_identity():
+                self.repository_trust.validate_rocky_configuration(effective, root)
+
+    def test_rocky_rejects_epel_without_exact_caddy_ownership_marker(self) -> None:
+        for mutation in (
+            "absent",
+            "wrong mode",
+            "wrong uid",
+            "wrong gid",
+            "wrong content",
+            "symlink",
+            "hardlink",
+            "fifo",
+        ):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                effective = self.rocky_fixture(root)
+                marker = self.add_epel_fixture(root, effective)
+                uid = gid = 0
+                if mutation == "absent":
+                    marker.unlink()
+                elif mutation == "wrong mode":
+                    marker.chmod(0o640)
+                elif mutation == "wrong uid":
+                    uid = 1000
+                elif mutation == "wrong gid":
+                    gid = 1000
+                elif mutation == "wrong content":
+                    marker.write_text("managed by homelab-playbook!", encoding="utf-8")
+                elif mutation == "symlink":
+                    target = marker.with_name("managed-target")
+                    marker.rename(target)
+                    marker.symlink_to(target)
+                elif mutation == "hardlink":
+                    os.link(marker, marker.with_name("managed-link"))
+                else:
+                    marker.unlink()
+                    os.mkfifo(marker, 0o600)
+                with self.marker_identity(uid, gid), self.assertRaises(ValueError):
+                    self.repository_trust.validate_rocky_configuration(effective, root)
+
+    def test_rocky_rejects_epel_id_key_and_signature_drift(self) -> None:
+        mutations = {
+            "EPEL signed by Rocky": lambda value, _root: value["repos"][1].update(
+                gpgkey=["file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-9"]
+            ),
+            "Rocky signed by EPEL": lambda value, _root: value["repos"][0].update(
+                gpgkey=["file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9"]
+            ),
+            "unknown EPEL ID": lambda value, _root: value["repos"][1].update(
+                id="epel-testing"
+            ),
+            "case-changed EPEL ID": lambda value, _root: value["repos"][1].update(
+                id="EPEL"
+            ),
+            "missing EPEL key": lambda _value, root: (
+                root / "etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9"
+            ).unlink(),
+            "EPEL signature bypass": lambda value, _root: value["repos"][1].update(
+                gpgcheck=False
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                effective = self.rocky_fixture(root)
+                self.add_epel_fixture(root, effective)
+                mutate(effective, root)
+                with self.marker_identity(), self.assertRaises(ValueError):
+                    self.repository_trust.validate_rocky_configuration(effective, root)
 
     def test_rocky_rejects_signature_bypasses_and_non_authoritative_files(
         self,

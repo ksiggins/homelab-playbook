@@ -25,6 +25,7 @@
     - policy.py
     - publication.py
     - runtime.py
+    - caddy.py
     - unit_contract.py
 
 - name: Install fixed TLS launchers
@@ -38,6 +39,7 @@
     - homelab-tls-issue
     - homelab-tls-reconcile
     - homelab-tls-verify
+    - homelab-tls-caddy
 
 - name: Create isolated lego extraction directory
   ansible.builtin.file:
@@ -97,9 +99,10 @@
     group: "{{ item.group }}"
     mode: "{{ item.mode }}"
   loop:
-    - {path: /var/lib/homelab-tls, owner: root, group: "{{ tls_automation_reader_gid }}", mode: '0750'}
+    - {path: /var/lib/homelab-tls, owner: root, group: "{{ tls_automation_caddy_gid }}", mode: '0750'}
     - {path: /var/lib/homelab-tls/private, owner: root, group: root, mode: '0700'}
-    - {path: /var/lib/homelab-tls/published, owner: root, group: "{{ tls_automation_reader_gid }}", mode: '0750'}
+    - {path: /etc/caddy/tls/infra, owner: root, group: caddy, mode: '0750'}
+    - {path: /etc/caddy/tls/.homelab-tls-private, owner: root, group: root, mode: '0700'}
     - {path: /var/lib/homelab-tls-issuer, owner: svc-acme, group: svc-acme, mode: '0700'}
 
 - name: Create the fixed coordinator lock

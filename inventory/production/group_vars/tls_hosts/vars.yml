@@ -1,0 +1,11 @@
+---
+# Capability installation only; initial renewal and timer enablement are separate
+# authorized actions. The role verifies the issuer allocation before creating it.
+tls_automation_timer_enabled: false
+tls_automation_issuer_uid: 2010
+tls_automation_issuer_gid: 2010
+reverse_proxy_deferred_certificates:
+  - infra
+# Supply namespace, ACME contact, listener/client networks, routes, and optional
+# Cloudflare credential through operator-managed secrets.sops.yml. The installed
+# Caddy group supplies certificate read access; do not allocate another proxy GID.

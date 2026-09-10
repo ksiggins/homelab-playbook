@@ -23,6 +23,7 @@ mkdir -p \
   "$inventory_test_root/production/group_vars/os_managed" \
   "$inventory_test_root/production/group_vars/podman_hosts" \
   "$inventory_test_root/production/group_vars/reverse_proxy_hosts" \
+  "$inventory_test_root/production/group_vars/tls_hosts" \
   "$inventory_test_root/production/host_vars/nuc4" \
   "$inventory_test_root/staging/group_vars/semaphore" \
   "$inventory_test_root/staging-semaphore/group_vars/semaphore" \
@@ -37,6 +38,8 @@ cp "$repository_root/inventory/production/group_vars/podman_hosts/vars.yml" \
   "$inventory_test_root/production/group_vars/podman_hosts/vars.yml"
 cp "$repository_root/inventory/production/group_vars/reverse_proxy_hosts/vars.yml" \
   "$inventory_test_root/production/group_vars/reverse_proxy_hosts/vars.yml"
+cp "$repository_root/inventory/production/group_vars/tls_hosts/vars.yml" \
+  "$inventory_test_root/production/group_vars/tls_hosts/vars.yml"
 cp "$repository_root/inventory/production/host_vars/nuc4/vars.yml" \
   "$inventory_test_root/production/host_vars/nuc4/vars.yml"
 
@@ -105,12 +108,17 @@ staging_semaphore = load_inventory(sys.argv[4])
 assert production["os_managed"].get("hosts", []) == ["nuc4"]
 assert production["podman_hosts"].get("hosts", []) == ["nuc4"]
 assert production["reverse_proxy_hosts"].get("hosts", []) == ["nuc4"]
+assert production["tls_hosts"].get("hosts", []) == ["nuc4"]
 for retired_group in ("servers", "pihole", "ansible"):
     assert retired_group not in production
 host_variables = production.get("_meta", {}).get("hostvars", {}).get("nuc4", {})
 assert host_variables.get("ansible_user") == "ansible"
 assert host_variables.get("host_identity_hostname") == "nuc4"
 assert host_variables.get("podman_foundation_accounts") == []
+assert host_variables.get("tls_automation_timer_enabled") is False
+assert host_variables.get("tls_automation_issuer_uid") == 2010
+assert host_variables.get("tls_automation_issuer_gid") == 2010
+assert host_variables.get("reverse_proxy_deferred_certificates") == ["infra"]
 assert host_variables.get("reverse_proxy_bind_addresses") == []
 assert host_variables.get("reverse_proxy_client_sources") == []
 assert host_variables.get("reverse_proxy_routes") == []
