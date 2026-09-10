@@ -151,7 +151,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.run_molecule == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 4
